@@ -1,16 +1,14 @@
-# Abbot Report Engine — V1 MVP
+# Abbot Geotech Report Engine — V1 MVP
 
 Offline-first PWA for capturing geotechnical field data and generating certifier-ready reports.
 No framework, no build step, no paid services. One HTML file, a manifest and a service worker.
 
 ## Quick start (free hosting on GitHub Pages)
 
-1. Create a GitHub repository (e.g. `abbot-report-engine`) and push these files to the root.
-2. Repository → Settings → Pages → Source: *Deploy from a branch* → `main` / root. Save.
-3. Open the published URL (live: https://clairethetester.github.io/abbot-geotech-report-engine/) on the engineer's phone/tablet:
+1. Open the published URL (live: https://clairethetester.github.io/abbot-geotech-report-engine/) on the engineer's phone/tablet:
    - **iOS Safari:** Share → *Add to Home Screen*.
    - **Android Chrome / desktop Chrome & Edge:** the install prompt appears, or menu → *Install app*.
-4. The service worker caches the whole app on first load — after that it runs with **zero signal**,
+2. The service worker caches the whole app on first load — after that it runs with **zero signal**,
    which is the normal condition on a rural NSW site.
 
 > HTTPS is required for PWA install and the service worker; GitHub Pages provides it automatically.

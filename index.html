@@ -1,0 +1,1462 @@
+<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#22303a">
+<meta name="description" content="Abbot Design geotechnical report engine — field data capture and certifier-ready report generation.">
+<title>Abbot Report Engine</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<style>
+/* ============================================================
+   Design tokens — "field instrument" direction.
+   Basalt chassis, limestone paper, survey-flag orange accent.
+   System font stack: the app must load with zero network.
+   ============================================================ */
+:root{
+  --basalt:#22303a;        /* header / chassis */
+  --basalt-deep:#16212a;
+  --paper:#f5f3ee;         /* limestone paper background */
+  --card:#ffffff;
+  --ink:#1c2429;
+  --ink-soft:#54626c;
+  --flag:#d64500;          /* survey-flag orange, AA on paper & white */
+  --flag-ink:#8f2e00;
+  --ok:#1d6f4c;
+  --warn:#8a5800;
+  --line:#d8d4c9;
+  --line-strong:#aeb7bd;
+  --focus:#0f62fe;
+  --radius:10px;
+  --font:system-ui,-apple-system,"Segoe UI",Roboto,Ubuntu,sans-serif;
+  --display:"Segoe UI Variable Display","Segoe UI",system-ui,-apple-system,"Helvetica Neue",Roboto,Arial,sans-serif;
+  --tap:44px; /* WCAG 2.2 target size with headroom */
+}
+*{box-sizing:border-box}
+html{font-size:16px}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font);line-height:1.5}
+:focus-visible{outline:3px solid var(--focus);outline-offset:2px;border-radius:4px}
+.skip{position:absolute;left:-999px;top:0;background:var(--card);color:var(--ink);padding:.6rem 1rem;z-index:99}
+.skip:focus{left:8px;top:8px}
+@media (prefers-reduced-motion: no-preference){
+  .view{animation:fade .18s ease}
+  @keyframes fade{from{opacity:.4}to{opacity:1}}
+}
+
+/* ---------- chassis ---------- */
+header.app{background:var(--basalt);color:#fff;padding:.65rem 1rem;display:flex;gap:.75rem;align-items:center;flex-wrap:wrap}
+header.app .mark{font-family:var(--display);font-weight:800;font-size:.82rem;letter-spacing:.08em;line-height:1.25}
+header.app .mark span{color:#ffb38a}
+header.app .ctx{font-size:.85rem;opacity:.9;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  background:transparent;border:0;color:#fff;text-align:left;padding:.3rem .2rem;min-height:0;cursor:pointer;border-radius:6px}
+header.app .ctx:hover{background:rgba(255,255,255,.08)}
+header.app .mark{max-width:min(58vw,430px)}
+header.app .savestate{font-size:.78rem;background:var(--basalt-deep);padding:.25rem .6rem;border-radius:999px}
+header.app .helpbtn{font-size:.8rem;color:#fff;text-decoration:none;background:var(--basalt-deep);
+  padding:.3rem .7rem;border-radius:999px;border:1px solid rgba(255,255,255,.25);white-space:nowrap}
+header.app .helpbtn:hover{background:var(--flag);border-color:var(--flag)}
+main{max-width:920px;margin:0 auto;padding:1rem 1rem 6.5rem}
+
+button{font:inherit;cursor:pointer;border-radius:var(--radius);border:1.5px solid var(--line-strong);
+  background:var(--card);color:var(--ink);min-height:var(--tap);padding:.5rem 1rem}
+button:hover{border-color:var(--basalt)}
+button.primary{background:var(--flag);border-color:var(--flag);color:#fff;font-weight:600}
+button.primary:hover{background:#b93a00}
+button.quiet{border-color:transparent;background:transparent;color:var(--flag-ink);text-decoration:underline;text-underline-offset:3px}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.danger{color:#9d1c1c;border-color:#d9a5a5}
+
+/* ---------- home ---------- */
+.hero{margin:1.2rem 0 1.4rem}
+.hero h1{font-family:var(--display);font-size:1.7rem;margin:0 0 .3rem}
+.hero p{color:var(--ink-soft);margin:0;max-width:52ch}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:1rem 1.1rem;margin:.7rem 0}
+ul.reports{list-style:none;margin:0;padding:0}
+ul.reports li{display:flex;gap:.8rem;align-items:center;border-bottom:1px solid var(--line);padding:.7rem 0;flex-wrap:wrap}
+ul.reports li:last-child{border-bottom:0}
+.reports .meta{flex:1;min-width:220px}
+.reports .meta b{display:block}
+.reports .meta small{color:var(--ink-soft)}
+.badge{font-size:.72rem;font-weight:700;letter-spacing:.05em;padding:.2rem .55rem;border-radius:4px;text-transform:uppercase}
+.badge.draft{background:#fdeee4;color:var(--flag-ink)}
+.badge.issued{background:#e2f1e9;color:var(--ok)}
+.badge.review{background:#fdf3d7;color:var(--warn)}
+.typegrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:.8rem;margin-top:.8rem}
+.typegrid button{display:block;text-align:left;padding:1rem}
+.typegrid b{display:block;margin-bottom:.25rem}
+.typegrid small{color:var(--ink-soft);font-weight:400}
+
+/* ---------- strata progress spine (signature element) ----------
+   Each report section is a stratum; it fills as the section completes. */
+.strata{display:flex;height:14px;border-radius:7px;overflow:hidden;border:1px solid var(--line-strong);margin:.6rem 0 .2rem}
+.strata span{flex:1;background:#e7e4db;position:relative}
+.strata span+span{border-left:1px solid var(--card)}
+.strata span i{position:absolute;inset:0;transform-origin:left;background:#2f6db5;display:block}
+.strata span.done i{background:var(--ok)}
+.strata span.active::after{content:"";position:absolute;left:0;right:0;bottom:0;height:4px;background:#2f6db5;z-index:2}
+.stratalabel{font-size:.78rem;color:var(--ink-soft)}
+
+/* ---------- editor tabs ---------- */
+nav.tabs{position:sticky;top:0;background:var(--paper);z-index:5;padding:.4rem 0 .5rem;border-bottom:1px solid var(--line)}
+nav.tabs .rail{display:flex;gap:.35rem;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:thin;padding-bottom:2px}
+nav.tabs button{white-space:nowrap;border-radius:999px;min-height:40px;padding:.35rem .85rem;font-size:.9rem;border-width:1.5px}
+nav.tabs button[aria-current="step"]{background:var(--basalt);border-color:var(--basalt);color:#fff}
+nav.tabs button.done::before{content:"✓ ";color:var(--ok);font-weight:700}
+nav.tabs button[aria-current="step"].done::before{color:#9fe3c0}
+
+/* ---------- forms ---------- */
+fieldset{border:1px solid var(--line);border-radius:var(--radius);background:var(--card);padding:1rem 1.1rem;margin:0 0 1rem}
+legend{font-weight:700;padding:0;margin:0 0 .7rem;font-family:var(--display);font-size:1.02rem;float:left;width:100%;letter-spacing:.01em}
+legend+*{clear:both}
+fieldset{padding-top:1.1rem}
+.grid{display:grid;gap:.85rem 1rem;grid-template-columns:repeat(auto-fit,minmax(215px,1fr))}
+.grid .wide{grid-column:1/-1}
+label{display:block;font-size:.88rem;font-weight:600;margin-bottom:.25rem}
+label .opt{font-weight:400;color:var(--ink-soft)}
+input,select,textarea{width:100%;font:inherit;padding:.55rem .6rem;border:1.5px solid var(--line-strong);
+  border-radius:8px;background:#fff;color:var(--ink);min-height:var(--tap)}
+textarea{min-height:96px;line-height:1.45}
+select{appearance:none;-webkit-appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%2354626c' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right .75rem center;
+  padding-right:2.4rem;text-overflow:ellipsis;white-space:nowrap;overflow:hidden}
+input:invalid[data-touched],select:invalid[data-touched]{border-color:#c22}
+.hint{font-size:.8rem;color:var(--ink-soft);margin:.25rem 0 0}
+.rowlist{border-top:1px dashed var(--line);margin-top:.6rem;padding-top:.6rem}
+.rowitem{border:1px solid var(--line);border-radius:8px;padding:.7rem .8rem;margin:.55rem 0;background:#fbfaf7}
+.rowitem .rowhead{display:flex;justify-content:space-between;align-items:center;gap:.5rem;margin-bottom:.5rem}
+.rowitem .rowhead b{font-family:var(--display)}
+.inline{display:flex;gap:.6rem;flex-wrap:wrap;align-items:end}
+.inline>div{flex:1;min-width:130px}
+.checks{display:grid;gap:.4rem;grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
+.checks label{display:flex;gap:.55rem;align-items:flex-start;font-weight:400;min-height:var(--tap);padding:.35rem .2rem}
+.checks input{width:22px;height:22px;min-height:22px;margin-top:2px;flex:none}
+
+/* photos */
+.photogrid{display:grid;gap:.8rem;grid-template-columns:repeat(auto-fill,minmax(160px,1fr))}
+.photogrid figure{margin:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff}
+.photogrid img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block}
+.photogrid figcaption{padding:.4rem .5rem .6rem}
+.photogrid input{min-height:38px;font-size:.85rem}
+
+/* footer nav */
+.stepnav{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);
+  display:flex;gap:.6rem;justify-content:space-between;align-items:center;padding:.6rem max(1rem, env(safe-area-inset-left)) calc(.6rem + env(safe-area-inset-bottom));z-index:6}
+.stepnav .mid{flex:1;text-align:center;font-size:.82rem;color:var(--ink-soft)}
+
+/* issue gate */
+.gaps{background:#fff7f1;border:1px solid #ecc9b2;border-radius:var(--radius);padding: .8rem 1rem}
+.gaps ul{margin:.4rem 0 0;padding-left:1.2rem}
+.gaps a{color:var(--flag-ink)}
+[hidden]{display:none !important}
+.toast{position:fixed;bottom:84px;left:50%;transform:translateX(-50%);background:var(--basalt);color:#fff;
+  padding:.6rem 1.1rem;border-radius:999px;font-size:.9rem;z-index:20;box-shadow:0 4px 18px rgba(0,0,0,.25)}
+
+/* ============================================================
+   REPORT PREVIEW + PRINT  (the deliverable document)
+   ============================================================ */
+#preview{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:0;overflow:hidden}
+.rpt{font-family:var(--font);color:#111;padding:2.2rem 2.4rem;position:relative;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.rpt h1,.rpt h2,.rpt h3,.rpt .rh{font-family:var(--display)}
+.rpt-cover{text-align:center;padding:2.4rem 1rem 2rem;border-top:10px solid var(--flag);border-bottom:6px solid var(--basalt)}
+.rpt-cover .firm{font-family:var(--display);font-size:2rem;font-weight:800;letter-spacing:.14em}
+.rpt-cover .firm span{color:var(--flag)}
+.rpt-cover .tag{font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:#555;margin-top:.35rem;max-width:56ch;margin-left:auto;margin-right:auto}
+.rpt-cover h1{font-size:1.65rem;margin:2.2rem 0 .4rem}
+.rpt-cover .proj{font-size:1.05rem;margin:.15rem 0}
+.rpt-cover .meta{margin-top:1.6rem;font-size:.95rem;color:#333}
+.rpt table{width:100%;border-collapse:collapse;font-size:.86rem;margin:.6rem 0 1rem}
+.rpt th,.rpt td{border:1px solid #b9b9b9;padding:.4rem .55rem;text-align:left;vertical-align:top}
+.rpt th{background:var(--basalt);color:#fff;font-weight:700;border-color:var(--basalt)}
+.rpt h2{font-size:1.14rem;font-weight:800;letter-spacing:.02em;border-left:5px solid var(--flag);padding:.15rem 0 .15rem .6rem;margin:1.7rem 0 .6rem;background:linear-gradient(to right,#f0f3f5,transparent 70%)}
+.rpt .toc{list-style:none;padding:0;margin:.4rem 0 0;font-size:.93rem;columns:1}
+.rpt .toc li{display:flex;gap:.5rem;align-items:baseline;padding:.28rem 0;border-bottom:1px dotted #c9c9c9}
+.rpt .toc li b{min-width:2.2rem;color:var(--flag-ink)}
+.rpt .toc li.tsub{padding-left:2.6rem;font-size:.87rem;color:#333;border-bottom-color:#e2e2e2}
+.rpt .toc li.tsub b{min-width:2.4rem;color:#666;font-weight:600}
+.rpt .sigs{display:grid;grid-template-columns:1fr 1fr;gap:2.2rem;margin:1rem 0 .4rem}
+.rpt .sig .line{border-bottom:1.5px solid #333;height:2.7rem;margin-bottom:.35rem}
+.rpt .sig img.sigimg{display:block;height:56px;margin-bottom:.2rem;border-bottom:1.5px solid #333;padding-bottom:.2rem}
+.sigpad{border:1.5px dashed var(--line-strong);border-radius:8px;background:#fff;width:100%;max-width:430px;height:130px;touch-action:none;display:block}
+.rpt .sig p{margin:.1rem 0;font-size:.88rem}
+.rpt .coverfig{margin:1.8rem auto 0;max-width:520px;border:1px solid #c9c9c9;padding:.3rem;background:#fff}
+.rpt .coverfig img{width:100%;display:block}
+.rpt .coverfig figcaption{font-size:.78rem;color:#555;padding-top:.25rem}
+.rpt .contactstrip{margin-top:1.6rem;font-size:.82rem;color:#333;letter-spacing:.02em}
+.rpt h3{font-size:1rem;margin:1rem 0 .3rem}
+.rpt h4{font-size:.92rem;margin:.5rem 0 .2rem}
+.rpt .tblsig{height:38px;display:block;margin:0 auto .2rem}
+.rpt p{margin:.4rem 0;font-size:.93rem}
+.rpt .kv{display:grid;grid-template-columns:200px 1fr;font-size:.92rem;border:1px solid #b9b9b9}
+.rpt .kv>div{padding:.35rem .55rem;border-bottom:1px solid #d5d5d5}
+.rpt .kv>div:nth-child(odd){background:#e7edf1;font-weight:600;border-right:1px solid #c9d2d8;color:var(--basalt-deep)}
+.rpt .kv>div:nth-last-child(-n+2){border-bottom:0}
+.rpt .classbox{border:2px solid var(--basalt);padding:.8rem 1rem;margin:.8rem 0;display:flex;gap:1.4rem;flex-wrap:wrap}
+.rpt .classbox b{font-size:1.5rem;font-family:var(--display)}
+.rpt .photos{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}
+.rpt .photos figure{margin:0;border:1px solid #bbb;padding:.3rem}
+.rpt .photos img{width:100%;display:block}
+.rpt .photos figcaption{font-size:.8rem;padding-top:.25rem}
+.rpt footer{margin-top:2rem;border-top:1px solid #999;padding-top:.5rem;font-size:.78rem;color:#444;display:flex;justify-content:space-between;gap:1rem}
+.wm{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.wm b{position:absolute;top:42%;left:50%;transform:translate(-50%,-50%) rotate(-28deg);
+  font-size:5rem;color:rgba(198,40,40,.14);border:6px solid rgba(198,40,40,.14);padding:.4rem 2rem;white-space:nowrap}
+.previewbar{display:flex;gap:.6rem;flex-wrap:wrap;padding: .8rem 1rem;border-bottom:1px solid var(--line);background:#fbfaf7}
+
+@media print{
+  body{background:#fff}
+  header.app,nav.tabs,.stepnav,.previewbar,.no-print{display:none !important}
+  main{max-width:none;padding:0;margin:0}
+  #preview{border:0;border-radius:0}
+  .rpt{padding:0}
+  .rpt h2{break-after:avoid}
+  .rpt table,.rpt .rowitem,.rpt figure,.rpt .classbox{break-inside:avoid}
+  .rpt-cover{break-after:page}
+  .pagebreak{break-before:page}
+  @page{margin:18mm 16mm;size:A4}
+}
+@media (max-width:640px){
+  .rpt{padding:1.2rem 1rem}
+  .rpt .kv{grid-template-columns:1fr}
+  .rpt .kv>div:nth-child(odd){border-right:0}
+  .rpt .photos{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+<header class="app">
+  <div class="mark">ABBOT DESIGN<span> · </span>GEOTECH REPORT ENGINE</div>
+  <button type="button" class="ctx" id="ctx" aria-live="polite" title="Show full job details"></button>
+  <a class="helpbtn" href="engine-manual.pdf" target="_blank" rel="noopener" aria-label="Help — open the one-page manual (PDF)">?&nbsp;Help</a>
+  <span class="savestate" id="savestate" role="status">Ready</span>
+</header>
+
+<main id="main">
+  <!-- ================= HOME ================= -->
+  <section class="view" id="view-home">
+    <div class="hero">
+      <h1>Field reports, scoped right, drilled once.</h1>
+      <p>Capture the investigation as you walk the site. Every fact is entered once and flows through the whole
+         report — so the document your certifier reads never contradicts itself.</p>
+    </div>
+
+    <div class="card">
+      <h2 style="margin:.1rem 0 .2rem;font-family:var(--display)">Start a new report</h2>
+      <p class="hint">The report type sets which sections apply. You can change it later without losing data.</p>
+      <div class="typegrid">
+        <button data-newtype="desktop"><b>Desktop Geotechnical Assessment</b><small>Records, geology and hazard overlays. No fieldwork sections.</small></button>
+        <button data-newtype="classification"><b>Site Classification + Wind</b><small>AS 2870 lot classification and AS 4055 wind class. Certifier-ready.</small></button>
+        <button data-newtype="comprehensive"><b>Comprehensive Site Investigation</b><small>Full investigation with footing recommendations and hazard analysis.</small></button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin:.1rem 0 .4rem;font-family:var(--display)">Reports on this device</h2>
+      <ul class="reports" id="reportlist"></ul>
+      <p class="hint" id="emptyhint">No reports yet. Reports save automatically to this device.</p>
+    </div>
+
+    <div class="card">
+      <h2 style="margin:.1rem 0 .2rem;font-family:var(--display)">Transfer between devices</h2>
+      <p class="hint">New here? The <b>? Help</b> button (top right) opens the one-page manual — install steps, workflow and what to watch out for.</p>
+      <p class="hint">This engine has no cloud sync yet: <b>Export</b> a report (buttons above) to a .json file, send it to another
+        device, then <b>Import</b> it there. Typical use: field tablet → office computer for review.</p>
+      <div class="inline">
+        <button id="importbtn">Import a report (.json)</button>
+        <input type="file" id="importfile" accept="application/json" hidden aria-hidden="true">
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= EDITOR ================= -->
+  <section class="view" id="view-editor" hidden>
+    <nav class="tabs" aria-label="Report sections">
+      <div class="strata" id="strata" aria-hidden="true"></div>
+      <div class="stratalabel" id="stratalabel">Section progress</div>
+      <div class="rail" id="tabrail" role="tablist"></div>
+    </nav>
+    <form id="form" novalidate autocomplete="on"></form>
+  </section>
+
+  <!-- ================= PREVIEW ================= -->
+  <section class="view" id="view-preview" hidden>
+    <div id="preview">
+      <div class="previewbar no-print">
+        <button id="backedit">← Back to editing</button>
+        <button class="primary" id="printbtn">Print / Save as PDF</button>
+        <button id="issuebtn">Issue final report…</button>
+      </div>
+      <div id="gapbox" class="gaps no-print" style="margin: .8rem 1rem" hidden></div>
+      <div class="rpt" id="rpt"></div>
+    </div>
+  </section>
+</main>
+<dialog id="dlg" style="border:1px solid var(--line);border-radius:12px;max-width:26rem;padding:1.1rem 1.2rem">
+  <p id="dlgmsg" style="margin:.2rem 0 1rem;white-space:pre-line"></p>
+  <div class="inline" style="justify-content:flex-end">
+    <button id="dlgno">Cancel</button>
+    <button id="dlgyes" class="primary">Confirm</button>
+  </div>
+</dialog>
+
+<div class="stepnav no-print" id="stepnav" hidden>
+  <button id="prevbtn">← Back</button>
+  <span class="mid" id="stepmid"></span>
+  <button id="homebtn" class="quiet">All reports</button>
+  <button id="previewbtn">Preview</button>
+  <button class="primary" id="nextbtn">Next →</button>
+</div>
+
+<script>
+"use strict";
+/* ============================================================
+   Storage wrapper — the only place persistence lives.
+   Swap this for Supabase in phase 2 without touching the app.
+   Falls back to in-memory if storage is unavailable (private
+   browsing, sandboxed previews), with a visible notice.
+   ============================================================ */
+const store = (() => {
+  let mem = {}; let persistent = true;
+  try { const k="__t"; localStorage.setItem(k,"1"); localStorage.removeItem(k); }
+  catch(e){ persistent = false; }
+  return {
+    persistent,
+    get(k){ try{ return persistent ? JSON.parse(localStorage.getItem(k)) : (mem[k] ?? null); }catch(e){ return mem[k] ?? null; } },
+    set(k,v){ mem[k]=v; if(persistent){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){ persistent=false; note("Device storage is full — export your report to keep it safe."); } } },
+    del(k){ delete mem[k]; if(persistent) try{ localStorage.removeItem(k); }catch(e){} }
+  };
+})();
+
+/* ---------- report catalogue ---------- */
+const FIRM = {
+  name:"ABBOT DESIGN",
+  entity:"Chalmco Australia Pty Ltd t/a Abbot Design",
+  tagline:"Australia Wide Structural and Civil Engineering Services, Retail, Fit Out, Signs and Events, Geotech",
+  address:"19A Water St, Mulbring NSW 2323",
+  phone:"1800 027 882",
+  email:"geotech@abbotdesign.com.au",
+  web:"abbotdesign.com.au",
+  abn:"ABN 95 673 055 555"
+};
+const TYPES = {
+  desktop:        { label:"Desktop Geotechnical Assessment" },
+  classification: { label:"Site Classification + Wind Report" },
+  comprehensive:  { label:"Comprehensive Site Investigation" }
+};
+const SECTIONS = [
+  { id:"setup",  label:"Setup",           types:["desktop","classification","comprehensive"] },
+  { id:"client", label:"Client & site ID",types:["desktop","classification","comprehensive"] },
+  { id:"site",   label:"Site description",types:["desktop","classification","comprehensive"] },
+  { id:"field",  label:"Fieldwork",       types:["classification","comprehensive"] },
+  { id:"lab",    label:"Results",         types:["classification","comprehensive"] },
+  { id:"cls",    label:"Classification",  types:["classification","comprehensive"] },
+  { id:"wind",   label:"Wind",            types:["classification","comprehensive"] },
+  { id:"recs",   label:"Recommendations", types:["desktop","classification","comprehensive"] },
+  { id:"photos", label:"Photos",          types:["desktop","classification","comprehensive"] },
+  { id:"review", label:"Review & issue",  types:["desktop","classification","comprehensive"] },
+];
+const AS2870 = ["A","S","M","M-D","H1","H1-D","H2","H2-D","E","E-D","P"];
+const WINDCLASSES = ["N1","N2","N3","N4","N5","N6","C1","C2","C3","C4"];
+const HOLDPOINTS = [
+  "Footing / foundation material inspection before steel and concrete",
+  "Excavation hold-point inspections (drops not exceeding 1.5 m)",
+  "Review of structural drawings for Construction Certificate",
+  "Final inspection for Occupation Certificate"
+];
+const REC_AREAS = ["Soil excavation","Rock excavation","Vibrations","Excavation support","Retaining structures",
+  "Footings","Fills","Sediment and erosion control","Stormwater disposal","Imperfections",
+  "Conditions relating to design and construction monitoring","Other"];
+const FOOTINGS = ["Stiffened raft slab","Waffle pod slab","Strip footings","Isolated pad footings","Bored piers to competent material","Piers socketed to bedrock"];
+
+const GENERAL_NOTES_DEFAULT =
+"These notes accompany all geotechnical reports issued by Abbot Design. The report has been prepared for the purpose, project and site described, and relies in part on information supplied by the client or third parties which has not been independently verified except where stated. Geotechnical reporting is interpretative: subsurface conditions are inferred from discrete test locations and may vary between and beyond them, and the interface between materials may be more gradual or abrupt than indicated. Groundwater levels are those observed at the time of investigation and may vary with season, weather and construction activity. Where conditions encountered during construction differ from those described, Abbot Design should be consulted before work proceeds. Recommendations assume competent construction practice and compliance with the referenced Australian Standards. This document remains the intellectual property of Abbot Design and should only be reproduced in full.";
+
+const LIMITATIONS_DEFAULT =
+"This report has been prepared for the exclusive use of the named client and their nominated agents, for the project and site described, in accordance with the agreed scope of services. It must not be applied to other lots or projects. Subsurface conditions are interpreted from discrete test locations and may vary between and beyond them; if conditions encountered during construction differ from those described, Abbot Design must be notified before work proceeds. Ground and groundwater conditions can change with time, weather and construction activity. This report should be read in full and not separated from its appendices.";
+
+/* ---------- state ---------- */
+let db = store.get("abbot.reports") || {};      // id -> report
+let currentId = null;
+let sectionIdx = 0;
+
+function blank(type){
+  const now = new Date();
+  return {
+    id: "R" + now.getTime().toString(36),
+    type, created: now.toISOString(), updated: now.toISOString(), issued: null, status:"draft", submitted:null,
+    d: { jobNo:"", revision:"1", dateIssued: now.toISOString().slice(0,10),
+      author:"", authorQual:"", authorReg:"", reviewer:"", reviewerQual:"", reviewerReg:"",
+      client:"", careOf:"", clientPhone:"", clientEmail:"",
+      projectDesc:"", street:"", suburb:"", state:"NSW", postcode:"", lotDp:"", council:"",
+      drawingsBy:"", drawingNos:"", drawingsDate:"",
+      access:"", existing:"", vegetation:"", slopeDeg:"", aspect:"", drainage:"",
+      geologyMap:"", geologyUnit:"", history:"", neighbours:"",
+      fieldDate:"", operator:"", weather:"", equipment:"", groundwater:"Not encountered",
+      labName:"", labDate:"",
+      siteClass:"", classJust:"", bearing:"", ys:"",
+      windRegion:"A", terrain:"", topo:"", shielding:"", windClass:"", windNote:false,
+      footings:[], founding:"", excavation:"", retaining:"", fills:"", drainageRec:"", hazards:"", extraRecs:"",
+      holds:[...HOLDPOINTS.slice(0,2)], limitations:LIMITATIONS_DEFAULT,
+      authorSig:"", reviewerSig:"",
+      incLegend:true, incClassDefs:true, incGeneral:true, appGeneral:GENERAL_NOTES_DEFAULT,
+      distribution:"", dist:[], recRows:[], awaitingResults:false },
+    boreholes: [], dcps: [], samples: [], photos: [], plans: [], attachments: [], siteFigure:null, siteFigureCap:"",
+    source: null   // reserved: quote-system prefill (phase 2)
+  };
+}
+function report(){ return db[currentId]; }
+function statusOf(r){ return r.issued ? "issued" : (r.status||"draft"); }
+function saveDb(){ if(report()) report().updated = new Date().toISOString();
+  store.set("abbot.reports", db); flashSave(); }
+let saveT; function flashSave(){ const s=document.getElementById("savestate");
+  s.textContent = store.persistent ? "Saved" : "In memory only — export!";
+  clearTimeout(saveT); saveT=setTimeout(()=>s.textContent = store.persistent?"Autosave on":"In memory only — export!",1500); }
+
+function ask(msg, yesLabel){
+  return new Promise(res=>{
+    const dlg=$("dlg");
+    $("dlgmsg").textContent=msg; $("dlgyes").textContent=yesLabel||"Confirm";
+    const yes=()=>{cleanup();dlg.close();res(true)}, no=()=>{cleanup();dlg.close();res(false)};
+    function cleanup(){ $("dlgyes").removeEventListener("click",yes); $("dlgno").removeEventListener("click",no); }
+    $("dlgyes").addEventListener("click",yes); $("dlgno").addEventListener("click",no);
+    if(dlg.showModal) dlg.showModal(); else res(window.confirm(msg));
+  });
+}
+function inFrame(){ try{ return window.self!==window.top; }catch(e){ return true; } }
+function note(msg){ const t=document.createElement("div"); t.className="toast"; t.textContent=msg;
+  document.body.appendChild(t); setTimeout(()=>t.remove(),3500); }
+const esc = s => String(s??"").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const nl = s => esc(s).replace(/\n/g,"<br>");
+/* mini-markdown for recommendation descriptions: "# " heading, "- " bullets, "|a|b|" tables */
+function mdlite(src){
+  const lines=esc(src||"").split("\n"); let out="",list=false,tbl=[];
+  const flushT=()=>{ if(tbl.length){ out+="<table>"+tbl.map((row,i)=>"<tr>"+row.map(c=>{
+      const tag=i===0?"th":"td"; return `<${tag}>${c.trim()}</${tag}>`;}).join("")+"</tr>").join("")+"</table>"; tbl=[]; } };
+  const flushL=()=>{ if(list){ out+="</ul>"; list=false; } };
+  for(const ln of lines){
+    if(/^\|.*\|\s*$/.test(ln)){ flushL(); if(/^\|[\s\-:|]+\|\s*$/.test(ln)) continue;
+      tbl.push(ln.trim().replace(/^\||\|$/g,"").split("|")); continue; }
+    flushT();
+    if(/^#{1,2}\s/.test(ln)){ flushL(); out+=`<h4>${ln.replace(/^#{1,2}\s/,"")}</h4>`; }
+    else if(/^[-*]\s/.test(ln)){ if(!list){ out+="<ul>"; list=true; } out+=`<li>${ln.replace(/^[-*]\s/,"")}</li>`; }
+    else if(ln.trim()===""){ flushL(); }
+    else { flushL(); out+=`<p>${ln}</p>`; }
+  }
+  flushL(); flushT(); return out;
+}
+
+/* ---------- completeness (the issue gate) ---------- */
+function requirements(r){
+  const q=[], d=r.d, need=(cond,label,sec)=>{ if(!cond) q.push({label,sec}); };
+  need(d.jobNo,"Job number","setup");
+  need(d.author,"Author (engineer)","setup");
+  need(d.reviewer,"Reviewer for issue","setup");
+  need(d.client,"Client name","client");
+  need(d.street && d.suburb && d.postcode,"Full site address","client");
+  need(d.lotDp,"Lot and DP (certifiers require lot-specific reports)","client");
+  need(d.projectDesc,"Proposed development description","client");
+  need(d.slopeDeg!=="" ,"Site slope","site");
+  need(d.geologyUnit,"Mapped geology unit","site");
+  if(r.type!=="desktop"){
+    need(d.fieldDate,"Fieldwork date","field");
+    need(r.boreholes.length>0,"At least one borehole / test location","field");
+    need(r.boreholes.every(b=>b.depth && b.method),"Method and depth for every borehole","field");
+    need(d.siteClass,"AS 2870 site classification","cls");
+    need(d.classJust,"Classification justification","cls");
+    need(d.windClass,"AS 4055 wind classification","wind");
+    need(!d.awaitingResults,"External test results marked as still pending","lab");
+  }
+  need((d.footings.length>0)||d.founding,"Footing recommendation","recs");
+  if(r.type==="comprehensive") need(d.hazards,"Geotechnical hazards & risk commentary","recs");
+  need(d.limitations,"Limitations statement","review");
+  return q;
+}
+function sectionState(r, secId){
+  const gaps = requirements(r).filter(g=>g.sec===secId);
+  return gaps.length===0;
+}
+
+/* ============================================================
+   RENDERING — views
+   ============================================================ */
+const $ = id => document.getElementById(id);
+function show(view){
+  for(const v of ["home","editor","preview"]) $("view-"+v).hidden = (v!==view);
+  $("stepnav").hidden = (view!=="editor");
+  window.scrollTo(0,0);
+}
+
+/* ---------- home ---------- */
+function renderHome(){
+  $("ctx").textContent = "";
+  const list = $("reportlist"); list.innerHTML = "";
+  const items = Object.values(db).sort((a,b)=>b.updated.localeCompare(a.updated));
+  $("emptyhint").hidden = items.length>0;
+  for(const r of items){
+    const li=document.createElement("li");
+    li.innerHTML = `<div class="meta"><b>${esc(r.d.street||"(no address yet)")}, ${esc(r.d.suburb||"")}</b>
+      <small>${esc(TYPES[r.type].label)} · Job ${esc(r.d.jobNo||"—")} · updated ${new Date(r.updated).toLocaleDateString("en-AU")}</small></div>
+      <span class="badge ${statusOf(r)}">${{draft:"Draft",review:"Awaiting review",issued:"Issued"}[statusOf(r)]}</span>
+      <button data-open="${r.id}">Open</button>
+      <button data-export="${r.id}">Export</button>
+      <button class="danger" data-del="${r.id}">Delete</button>`;
+    list.appendChild(li);
+  }
+}
+
+/* ---------- editor scaffolding ---------- */
+function visibleSections(){ return SECTIONS.filter(s=>s.types.includes(report().type)); }
+function renderTabs(){
+  const secs = visibleSections();
+  const rail = $("tabrail"); rail.innerHTML="";
+  const strata = $("strata"); strata.innerHTML="";
+  secs.forEach((s,i)=>{
+    const done = sectionState(report(), s.id);
+    const b=document.createElement("button");
+    b.type="button"; b.textContent=s.label; b.className = done?"done":"";
+    if(i===sectionIdx) b.setAttribute("aria-current","step");
+    b.addEventListener("click",()=>{ sectionIdx=i; renderEditor(); });
+    rail.appendChild(b);
+    const seg=document.createElement("span");
+    seg.className = (i===sectionIdx?"active ":"")+(done?"done":"");
+    seg.innerHTML = `<i style="transform:scaleX(${done?1:(i===sectionIdx?0.45:0)})"></i>`;
+    strata.appendChild(seg);
+  });
+  const cur = rail.querySelector('[aria-current="step"]');
+  if(cur) cur.scrollIntoView({inline:"center", block:"nearest",
+    behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"});
+  const doneCount = secs.filter(s=>sectionState(report(),s.id)).length;
+  $("stratalabel").textContent = `Core log: ${doneCount} of ${secs.length} sections complete`;
+  $("stepmid").textContent = `${sectionIdx+1} / ${secs.length} — ${secs[sectionIdx].label}`;
+  $("prevbtn").disabled = sectionIdx===0;
+  $("nextbtn").textContent = sectionIdx===secs.length-1 ? "Preview report →" : "Next →";
+  $("previewbtn").hidden = sectionIdx===secs.length-1;
+  $("ctx").textContent = `${report().d.street||"New report"} · Job ${report().d.jobNo||"—"}`;
+}
+
+/* field helpers */
+function F(key,label,opts={}){
+  const d=report().d, t=opts.type||"text";
+  const req = opts.req?` <span class="opt">(required)</span>`:(opts.opt?` <span class="opt">(optional)</span>`:"");
+  const ac = opts.ac?` autocomplete="${opts.ac}"`:"";
+  const im = opts.im?` inputmode="${opts.im}"`:"";
+  if(t==="textarea") return `<div class="${opts.wide?"wide":""}"><label for="f_${key}">${label}${req}</label>
+    <textarea id="f_${key}" data-k="${key}"${ac}>${esc(d[key])}</textarea>${opts.hint?`<p class="hint">${opts.hint}</p>`:""}</div>`;
+  if(t==="select") return `<div class="${opts.wide?"wide":""}"><label for="f_${key}">${label}${req}</label>
+    <select id="f_${key}" data-k="${key}">${opts.options.map(o=>`<option value="${esc(o)}"${d[key]===o?" selected":""}>${esc(o||"— select —")}</option>`).join("")}</select>${opts.hint?`<p class="hint">${opts.hint}</p>`:""}</div>`;
+  return `<div class="${opts.wide?"wide":""}"><label for="f_${key}">${label}${req}</label>
+    <input id="f_${key}" data-k="${key}" type="${t}" value="${esc(d[key])}"${ac}${im}>${opts.hint?`<p class="hint">${opts.hint}</p>`:""}</div>`;
+}
+
+/* ---------- section templates ---------- */
+const TPL = {
+setup(r){ return `
+<fieldset><legend>Report setup</legend>
+ <div class="grid">
+  <div><label for="f_type">Report type</label>
+   <select id="f_type">${Object.entries(TYPES).map(([k,v])=>`<option value="${k}"${r.type===k?" selected":""}>${v.label}</option>`).join("")}</select>
+   <p class="hint">Changing type keeps your data; sections that no longer apply are hidden, not deleted.</p></div>
+  ${F("jobNo","Job number",{req:1,hint:"e.g. AD-2026-014"})}
+  ${F("revision","Revision")}
+  ${F("dateIssued","Date of issue",{type:"date"})}
+ </div>
+</fieldset>
+<fieldset><legend>Responsibility</legend>
+ <div class="grid">
+  ${F("author","Author — engineer",{req:1,ac:"name"})}
+  ${F("authorQual","Author qualifications",{hint:"e.g. BEng (Civil) MIEAust CPEng"})}
+  ${F("reviewer","Reviewer",{req:1,hint:"A second set of eyes is required before issue."})}
+  ${F("reviewerQual","Reviewer qualifications")}
+  ${F("authorReg","Author registration no.",{opt:1,hint:"NSW DBP PE number and/or NER/CPEng — mandatory for class 2/3/9c work, best practice always."})}
+  ${F("reviewerReg","Reviewer registration no.",{opt:1})}
+ </div>
+</fieldset>`; },
+
+client(r){ return `
+<fieldset><legend>Client</legend>
+ <div class="grid">
+  ${F("client","Client name",{req:1,ac:"organization"})}
+  ${F("careOf","Care of / referring designer",{opt:1})}
+  ${F("clientPhone","Client phone",{opt:1,ac:"tel",im:"tel"})}
+  ${F("clientEmail","Client email",{opt:1,type:"email",ac:"email"})}
+ </div>
+</fieldset>
+<fieldset><legend>Site identification</legend>
+ <div class="grid">
+  ${F("street","Street address",{req:1,ac:"street-address",wide:1})}
+  ${F("suburb","Suburb",{req:1})}
+  ${F("state","State",{type:"select",options:["NSW","QLD","VIC","SA","WA","TAS","NT","ACT"]})}
+  ${F("postcode","Postcode",{req:1,im:"numeric",ac:"postal-code"})}
+  ${F("lotDp","Lot & DP",{req:1,hint:"Certifiers reject reports that aren't lot-specific. e.g. Lot 12 DP 1234567"})}
+  ${F("council","Council / LGA",{opt:1})}
+ </div>
+</fieldset>
+<fieldset><legend>Proposed development</legend>
+ <div class="grid">
+  ${F("projectDesc","Description of proposed works",{type:"textarea",req:1,wide:1,hint:"e.g. New single-storey dwelling and detached garage."})}
+  ${F("drawingsBy","Drawings prepared by",{opt:1})}
+  ${F("drawingNos","Drawing numbers",{opt:1})}
+  ${F("drawingsDate","Drawings dated",{opt:1,type:"date"})}
+ </div>
+</fieldset>`; },
+
+site(r){ return `
+<fieldset><legend>Site description</legend>
+ <div class="grid">
+  ${F("access","Access",{type:"textarea",wide:1,hint:"How the site is accessed; constraints for rigs or excavators."})}
+  ${F("existing","Existing development / structures",{type:"textarea",wide:1})}
+  ${F("vegetation","Vegetation",{type:"textarea",wide:1,hint:"Note large trees — they affect AS 2870 classification and footing setbacks."})}
+  ${F("slopeDeg","Average slope (degrees)",{req:1,im:"decimal"})}
+  ${F("aspect","Slope aspect / falls to",{opt:1})}
+  ${F("drainage","Surface drainage & seepage observed",{type:"textarea",wide:1})}
+  ${F("neighbours","Neighbouring environment",{type:"textarea",wide:1,opt:1})}
+ </div>
+</fieldset>
+<fieldset><legend>Geology & site history</legend>
+ <div class="grid">
+  ${F("geologyMap","Geological map reference",{hint:"e.g. 1:100,000 Newcastle sheet / GSNSW Seamless Geology via MinView"})}
+  ${F("geologyUnit","Mapped unit & typical materials",{req:1,wide:1,hint:"e.g. Mulbring Siltstone — siltstone, claystone, thin sandstone."})}
+  ${F("history","Site history & fill risk",{type:"textarea",wide:1,hint:"Previous use, filling, dams, demolition — this drives the borehole plan. Scope before you drill."})}
+ </div>
+</fieldset>
+<fieldset><legend>Site location image</legend>
+ <div class="inline">
+  <button type="button" id="sitefigbtn">🗺 Add locality / aerial image</button>
+  <input type="file" id="sitefigfile" accept="image/*" hidden aria-hidden="true">
+ </div>
+ <p class="hint">An aerial or locality map appears on the cover and in the site description.</p>
+ <div id="sitefigwrap" style="margin-top:.7rem"></div>
+</fieldset>
+<fieldset><legend>Site plans (Appendix A)</legend>
+ <div class="inline">
+  <button type="button" id="addplan">＋ Add site plan image</button>
+  <input type="file" id="planfile" accept="image/*,application/pdf" multiple hidden aria-hidden="true">
+ </div>
+ <p class="hint">Site plan, ground test locations, sections — PDF or image; each page lands in Appendix A.</p>
+ <div class="photogrid" id="plangrid" style="margin-top:.7rem"></div>
+</fieldset>`; },
+
+field(r){ return `
+<fieldset><legend>Fieldwork visit</legend>
+ <div class="grid">
+  ${F("fieldDate","Fieldwork date",{type:"date",req:1,hint:"Used everywhere the visit is referenced."})}
+  ${F("operator","Operator / logged by",{ac:"name"})}
+  ${F("weather","Weather",{opt:1})}
+  ${F("equipment","Equipment & methods summary",{wide:1,hint:"e.g. Vehicle-mounted push tube; 9 kg DCP to AS 1289.6.3.2."})}
+  ${F("groundwater","Groundwater",{type:"select",options:["Not encountered","Encountered — see borehole logs","Seepage observed"]})}
+ </div>
+</fieldset>
+<fieldset><legend>Boreholes / test pits</legend>
+ <div id="bhlist" class="rowlist"></div>
+ <button type="button" id="addbh">+ Add borehole</button>
+</fieldset>
+<fieldset><legend>DCP tests <span class="opt" style="font-weight:400">(optional)</span></legend>
+ <p class="hint" style="margin-top:0">Summarise refusal depths here for the body table. Upload the full DCP report under
+  Results — it sits in Appendix C, so there's no need to re-key every blow count.</p>
+ <div id="dcplist" class="rowlist"></div>
+ <button type="button" id="adddcp">+ Add DCP test</button>
+</fieldset>`; },
+
+lab(r){ return `
+<fieldset><legend>Result documents (Appendix C)</legend>
+ <p class="hint" style="margin-top:0">Upload the reports as they arrive — the lab's liquid limit / linear shrinkage sheet,
+  the subcontractor's DCP report, and similar. The originals sit in Appendix C; you then transcribe only the summary
+  values below for the body of the report.</p>
+ <div class="inline">
+  <button type="button" id="addatt">📎 Upload result document</button>
+  <input type="file" id="attfile" accept="image/*,application/pdf" multiple hidden aria-hidden="true">
+ </div>
+ <p class="hint">PDFs and images both embed directly as pages in Appendix C. First PDF conversion needs an internet
+  connection once; after that it works offline.</p>
+ <div id="attlist" class="rowlist"></div>
+ <div class="checks" style="margin-top:.6rem">
+  <label><input type="checkbox" data-bool="awaitingResults"${r.d.awaitingResults?" checked":""}>
+   <span><b>Results still pending</b> — keep this report as a draft until external results are in. Blocks issue while ticked.</span></label>
+ </div>
+</fieldset>
+<fieldset><legend>Summary of laboratory results</legend>
+ <p class="hint" style="margin-top:0">Transcribe only the values referenced in the report body — the source document above is the record.</p>
+ <div class="grid">
+  ${F("labName","Laboratory",{hint:"NATA-accredited laboratory name"})}
+  ${F("labDate","Lab test date",{type:"date"})}
+ </div>
+ <div id="samplelist" class="rowlist"></div>
+ <button type="button" id="addsample">+ Add sample result</button>
+</fieldset>`; },
+
+cls(r){ return `
+<fieldset><legend>AS 2870 site classification</legend>
+ <div class="grid">
+  ${F("siteClass","Site classification",{type:"select",req:1,options:["",...AS2870]})}
+  ${F("ys","Characteristic surface movement ys (mm)",{opt:1,im:"decimal"})}
+  ${F("classJust","Basis of classification",{type:"textarea",req:1,wide:1,hint:"Subsurface profile, lab results, visual assessment, trees, fill. The engineer classifies — the app never does."})}
+  ${F("bearing","Allowable bearing pressures",{type:"textarea",wide:1,hint:"e.g. 100 kPa at 1.1 m (BH1) / 150 kPa at 1.4 m … or 800 kPa on low-strength bedrock."})}
+ </div>
+</fieldset>`; },
+
+wind(r){ return `
+<fieldset><legend>AS 4055 wind classification</legend>
+ <div class="grid">
+  ${F("windRegion","Wind region",{type:"select",options:["A","B","C","D"]})}
+  ${F("terrain","Terrain category",{hint:"e.g. TC2.5"})}
+  ${F("topo","Topographic class",{hint:"e.g. T2"})}
+  ${F("shielding","Shielding",{hint:"FS / PS / NS"})}
+  ${F("windClass","Resulting wind classification",{type:"select",req:1,options:["",...WINDCLASSES]})}
+ </div>
+ <div class="checks" style="margin-top:.6rem">
+  <label><input type="checkbox" id="f_windNote" ${r.d.windNote?"checked":""}>
+   Include note: a detailed AS 1170.2 assessment may yield a lower design wind speed, reducing framing and tie-down costs — Abbot Design can provide this.</label>
+ </div>
+</fieldset>`; },
+
+recs(r){ return `
+<fieldset><legend>Foundations</legend>
+ <p class="hint" style="margin-top:0">Suitable footing systems for this site:</p>
+ <div class="checks">${FOOTINGS.map(f=>`<label><input type="checkbox" data-arr="footings" value="${esc(f)}"${r.d.footings.includes(f)?" checked":""}> ${esc(f)}</label>`).join("")}</div>
+ <div class="grid" style="margin-top:.8rem">
+  ${F("founding","Founding advice & minimum requirements",{type:"textarea",wide:1,req:1,hint:"Founding stratum, pier requirements, differential settlement controls."})}
+ </div>
+</fieldset>
+<fieldset><legend>Geotechnical recommendations</legend>
+ <p class="hint" style="margin-top:0">One row per topic. Description supports simple formatting:
+  start a line with <b># </b> for a heading, <b>- </b> for a bullet, or <b>|cell|cell|</b> for a table row.</p>
+ <div id="reclist" class="rowlist"></div>
+ <button type="button" id="addrec">+ Add recommendation</button>
+</fieldset>
+${r.type==="comprehensive"?`<fieldset><legend>Hazards & risk</legend>
+ <div class="grid">${F("hazards","Geotechnical hazards & risk analysis",{type:"textarea",wide:1,req:1,hint:"Identified hazards, likelihood/consequence commentary (AGS 2007 where landslide risk applies)."})}</div>
+</fieldset>`:""}
+<fieldset><legend>Inspections & hold points</legend>
+ <p class="hint" style="margin-top:0">Inspections required for this report to remain valid through construction:</p>
+ <div class="checks">${HOLDPOINTS.map(h=>`<label><input type="checkbox" data-arr="holds" value="${esc(h)}"${r.d.holds.includes(h)?" checked":""}> ${esc(h)}</label>`).join("")}</div>
+</fieldset>`; },
+
+photos(r){ return `
+<fieldset><legend>Site photos</legend>
+ <div class="inline">
+   <button type="button" id="takephoto">📷 Take / add photo</button>
+   <input type="file" id="photofile" accept="image/*" capture="environment" multiple hidden aria-hidden="true">
+   <span class="hint" id="photocount"></span>
+ </div>
+ <p class="hint">Photos are compressed on-device for the report. Keep originals in your camera roll.</p>
+ <div class="photogrid" id="photogrid" style="margin-top:.8rem"></div>
+</fieldset>`; },
+
+review(r){ return `
+<fieldset><legend>Limitations</legend>
+ <div class="grid">${F("limitations","Limitations statement",{type:"textarea",wide:1,req:1})}</div>
+</fieldset>
+<fieldset><legend>Sign-off & review</legend>
+ <p class="hint" style="margin-top:0">Sign inside the dashed box — anything outside is cut off.</p>
+ <div class="grid">
+  <div>
+   <h3 style="margin:.2rem 0 .4rem;font-size:1rem;font-family:var(--display)">1 · Author — ${esc(r.d.author)||"author"}</h3>
+   <canvas class="sigpad" data-sig="authorSig" width="430" height="130" aria-label="Author signature" role="img"></canvas>
+   <div class="inline" style="margin-top:.4rem">
+    <button type="button" data-clearsig="authorSig">Clear</button>
+    ${statusOf(r)==="draft"?`<button type="button" class="primary" id="submitreview">Submit for review</button>`:""}
+   </div>
+   ${statusOf(r)!=="draft"?`<p class="hint">Submitted ${r.submitted?new Date(r.submitted).toLocaleDateString("en-AU"):""} — editing anything returns this report to draft.</p>`:""}
+  </div>
+  <div>
+   <h3 style="margin:.2rem 0 .4rem;font-size:1rem;font-family:var(--display)">2 · Reviewer — ${esc(r.d.reviewer)||"reviewer"}</h3>
+   ${statusOf(r)==="draft"
+     ? `<p class="hint" style="border:1.5px dashed var(--line-strong);border-radius:8px;padding:2.4rem 1rem;text-align:center;max-width:430px">Unlocks when the author submits for review.</p>`
+     : `<canvas class="sigpad" data-sig="reviewerSig" width="430" height="130" aria-label="Reviewer signature" role="img"></canvas>
+        <div class="inline" style="margin-top:.4rem">
+         <button type="button" data-clearsig="reviewerSig">Clear</button>
+         ${statusOf(r)==="review"?`<button type="button" id="reqchanges">Request changes</button>`:""}
+        </div>
+        ${statusOf(r)==="review"?`<p class="hint">Sign, then open <b>Preview report →</b> to issue.</p>`:""}`}
+  </div>
+ </div>
+</fieldset>
+<fieldset><legend>Appendices</legend>
+ <div class="checks">
+  <label><input type="checkbox" data-bool="incLegend"${r.d.incLegend?" checked":""}> Borehole log legend &amp; investigation methods</label>
+  <label><input type="checkbox" data-bool="incClassDefs"${r.d.incClassDefs?" checked":""}> AS 2870 site classification definitions</label>
+  <label><input type="checkbox" data-bool="incGeneral"${r.d.incGeneral?" checked":""}> General notes</label>
+ </div>
+ <div class="grid" style="margin-top:.7rem">${F("appGeneral","General notes text",{type:"textarea",wide:1})}</div>
+</fieldset>
+<fieldset><legend>Document distribution</legend>
+ <p class="hint" style="margin-top:0">Who receives this report, in what format, and when.</p>
+ <div id="distlist" class="rowlist"></div>
+ <button type="button" id="adddist">+ Add recipient</button>
+</fieldset>
+<fieldset><legend>Readiness</legend>
+ <div id="reviewgaps"></div>
+ <div class="inline" style="margin-top:.8rem">
+  <button type="button" id="exportthis">Export data (.json)</button>
+ </div>
+ <p class="hint">Use <b>Preview report →</b> below to review and issue.</p>
+</fieldset>`; }
+};
+
+/* ---------- dynamic row renderers ---------- */
+function renderBoreholes(){
+  const el=$("bhlist"); if(!el) return; el.innerHTML="";
+  report().boreholes.forEach((b,i)=>{
+    const div=document.createElement("div"); div.className="rowitem";
+    div.innerHTML=`<div class="rowhead"><b>BH${i+1}</b><button type="button" class="danger" data-delbh="${i}">Remove</button></div>
+     <div class="inline">
+       <div><label>Method<select data-bh="${i}" data-f="method">
+        ${["","Push tube (rig)","Push tube (hand)","Hand auger","Machine auger","Test pit"].map(m=>`<option${b.method===m?" selected":""}>${m}</option>`).join("")}
+       </select></label></div>
+       <div><label>Termination depth (m)<input data-bh="${i}" data-f="depth" inputmode="decimal" value="${esc(b.depth)}"></label></div>
+       <div><label>Water<select data-bh="${i}" data-f="water">${["NE — not encountered","E — encountered","Seepage"].map(m=>`<option${b.water===m?" selected":""}>${m}</option>`).join("")}</select></label></div>
+     </div>
+     <div class="rowlist" data-layers="${i}"></div>
+     <button type="button" data-addlayer="${i}">+ Add soil layer</button>`;
+    el.appendChild(div);
+    const ll=div.querySelector(`[data-layers="${i}"]`);
+    b.layers.forEach((L,j)=>{
+      const lr=document.createElement("div"); lr.className="inline"; lr.style.marginBottom=".4rem";
+      lr.innerHTML=`<div><label>From (m)<input data-bh="${i}" data-layer="${j}" data-f="from" inputmode="decimal" value="${esc(L.from)}"></label></div>
+        <div><label>To (m)<input data-bh="${i}" data-layer="${j}" data-f="to" inputmode="decimal" value="${esc(L.to)}"></label></div>
+        <div><label>USCS<input data-bh="${i}" data-layer="${j}" data-f="uscs" value="${esc(L.uscs)}" placeholder="SC"></label></div>
+        <div style="flex:2;min-width:200px"><label>Description<input data-bh="${i}" data-layer="${j}" data-f="desc" value="${esc(L.desc)}" placeholder="Sandy CLAY, brown, stiff, dry"></label></div>
+        <div><button type="button" data-dellayer="${i}:${j}" class="danger">✕<span class="sr-only"> remove layer</span></button></div>`;
+      ll.appendChild(lr);
+    });
+  });
+}
+function renderDcps(){
+  const el=$("dcplist"); if(!el) return; el.innerHTML="";
+  report().dcps.forEach((d,i)=>{
+    const div=document.createElement("div"); div.className="rowitem";
+    div.innerHTML=`<div class="rowhead"><b>DCP ${i+1}</b><button type="button" class="danger" data-deldcp="${i}">Remove</button></div>
+     <div class="inline">
+      <div><label>Refusal depth (m)<input data-dcp="${i}" data-f="depth" inputmode="decimal" value="${esc(d.depth)}"></label></div>
+      <div style="flex:2"><label>Result note<input data-dcp="${i}" data-f="note" value="${esc(d.note)}" placeholder="Bouncing on bedrock; brown sand on dry tip"></label></div>
+     </div>`;
+    el.appendChild(div);
+  });
+}
+function renderSamples(){
+  const el=$("samplelist"); if(!el) return; el.innerHTML="";
+  report().samples.forEach((s,i)=>{
+    const div=document.createElement("div"); div.className="rowitem";
+    div.innerHTML=`<div class="rowhead"><b>Sample ${i+1}</b><button type="button" class="danger" data-delsample="${i}">Remove</button></div>
+     <div class="inline">
+      <div><label>Borehole<input data-sample="${i}" data-f="bh" value="${esc(s.bh)}" placeholder="BH2"></label></div>
+      <div><label>Depth (m)<input data-sample="${i}" data-f="depth" inputmode="decimal" value="${esc(s.depth)}"></label></div>
+      <div><label>Liquid limit (%)<input data-sample="${i}" data-f="ll" inputmode="decimal" value="${esc(s.ll)}"></label></div>
+      <div><label>Linear shrinkage (%)<input data-sample="${i}" data-f="ls" inputmode="decimal" value="${esc(s.ls)}"></label></div>
+      <div style="flex:2"><label>Material<input data-sample="${i}" data-f="desc" value="${esc(s.desc)}"></label></div>
+     </div>`;
+    el.appendChild(div);
+  });
+}
+function renderPhotos(){
+  const el=$("photogrid"); if(!el) return; el.innerHTML="";
+  report().photos.forEach((p,i)=>{
+    const f=document.createElement("figure");
+    f.innerHTML=`<img src="${p.dataUrl}" alt="${esc(p.caption||("Site photo "+(i+1)))}">
+     <figcaption><label class="sr-only" for="cap${i}">Caption for photo ${i+1}</label>
+       <input id="cap${i}" data-photo="${i}" value="${esc(p.caption)}" placeholder="Caption, e.g. Front of site looking east">
+       <button type="button" class="danger" data-delphoto="${i}" style="margin-top:.35rem;width:100%">Remove</button></figcaption>`;
+    el.appendChild(f);
+  });
+  const pc=$("photocount"); if(pc) pc.textContent = report().photos.length ? `${report().photos.length} photo(s) attached` : "";
+}
+function renderPlans(){
+  const el=$("plangrid"); if(!el) return; el.innerHTML="";
+  (report().plans||(report().plans=[])).forEach((p,i)=>{
+    const f=document.createElement("figure");
+    f.innerHTML=`<img src="${p.dataUrl}" alt="${esc(p.caption||("Site plan "+(i+1)))}">
+     <figcaption><label class="sr-only" for="plan${i}">Caption for plan ${i+1}</label>
+       <input id="plan${i}" data-plan="${i}" value="${esc(p.caption)}" placeholder="e.g. Site plan / ground test locations">
+       <button type="button" class="danger" data-delplan="${i}" style="margin-top:.35rem;width:100%">Remove</button></figcaption>`;
+    el.appendChild(f);
+  });
+}
+function renderDist(){
+  const el=$("distlist"); if(!el) return; el.innerHTML="";
+  (report().d.dist||(report().d.dist=[])).forEach((x,i)=>{
+    const div=document.createElement("div"); div.className="rowitem";
+    div.innerHTML=`<div class="rowhead"><b>Recipient ${i+1}</b><button type="button" class="danger" data-deldist="${i}">Remove</button></div>
+     <div class="inline">
+      <div style="flex:2"><label>To<input data-dist="${i}" data-f="to" value="${esc(x.to)}" placeholder="e.g. Client — J. Smith"></label></div>
+      <div><label>Format<select data-dist="${i}" data-f="format">${["PDF","Hard copy","PDF + hard copy"].map(o=>`<option${x.format===o?" selected":""}>${o}</option>`).join("")}</select></label></div>
+      <div><label>Date<input type="date" data-dist="${i}" data-f="date" value="${esc(x.date)}"></label></div>
+     </div>`;
+    el.appendChild(div);
+  });
+}
+function renderRecRows(){
+  const el=$("reclist"); if(!el) return; el.innerHTML="";
+  (report().d.recRows||(report().d.recRows=[])).forEach((x,i)=>{
+    const div=document.createElement("div"); div.className="rowitem";
+    div.innerHTML=`<div class="rowhead"><b>${esc(x.area||"Recommendation")}</b><button type="button" class="danger" data-delrec="${i}">Remove</button></div>
+     <div class="inline">
+      <div><label>Area<select data-rec="${i}" data-f="area">${REC_AREAS.map(o=>`<option${x.area===o?" selected":""}>${o}</option>`).join("")}</select></label></div>
+     </div>
+     <div style="margin-top:.5rem"><label>Description<textarea data-rec="${i}" data-f="desc" rows="5">${esc(x.desc)}</textarea></label></div>`;
+    el.appendChild(div);
+  });
+}
+function renderAttachments(){
+  const el=$("attlist"); if(!el) return; el.innerHTML="";
+  (report().attachments||(report().attachments=[])).forEach((a,i)=>{
+    const div=document.createElement("div"); div.className="rowitem";
+    div.innerHTML=`<div class="rowhead"><b>${a.kind==="pdf"?"📄":"🖼"} ${esc(a.title||a.name||("Document "+(i+1)))}</b>
+      <span class="inline" style="gap:.4rem">
+       ${a.kind==="pdf"?`<button type="button" data-dlatt="${i}">Download</button>`:""}
+       <button type="button" class="danger" data-delatt="${i}">Remove</button></span></div>
+     ${a.kind==="image"?`<img src="${a.dataUrl}" alt="${esc(a.title||"Result document")}" style="max-width:240px;border:1px solid var(--line);border-radius:6px;display:block;margin-bottom:.5rem">`:""}
+     <div class="inline">
+      <div style="flex:2"><label>Title<input data-att="${i}" data-f="title" value="${esc(a.title)}" placeholder="e.g. Liquid limit & linear shrinkage results"></label></div>
+      <div><label>Source<input data-att="${i}" data-f="source" value="${esc(a.source)}" placeholder="e.g. NATA lab / driller"></label></div>
+      <div><label>Date<input type="date" data-att="${i}" data-f="date" value="${esc(a.date)}"></label></div>
+     </div>`;
+    el.appendChild(div);
+  });
+}
+function renderReviewGaps(){
+  const el=$("reviewgaps"); if(!el) return;
+  const gaps=requirements(report());
+  el.innerHTML = gaps.length===0
+    ? `<p style="color:var(--ok);font-weight:600;margin:0">✓ All required content is present. Preview, then issue.</p>`
+    : `<div class="gaps"><b>${gaps.length} item(s) needed before this report can be issued:</b>
+       <ul>${gaps.map(g=>`<li><a href="#" data-goto="${g.sec}">${esc(g.label)}</a></li>`).join("")}</ul>
+       <p class="hint">You can still generate a PDF at any time — it carries a DRAFT watermark until issued.</p></div>`;
+}
+
+function renderEditor(){
+  renderTabs();
+  const sec = visibleSections()[sectionIdx];
+  $("form").innerHTML = TPL[sec.id](report());
+  renderBoreholes(); renderDcps(); renderSamples(); renderPhotos(); renderPlans(); renderDist(); renderRecRows(); renderSiteFig(); renderAttachments(); initSigPads(); renderReviewGaps();
+  const first = $("form").querySelector("input,select,textarea,button");
+  if(first && matchMedia("(min-width:700px)").matches) first.focus({preventScroll:true});
+}
+
+/* ============================================================
+   REPORT DOCUMENT (preview + print)
+   ============================================================ */
+function buildReport(){
+  const r=report(), d=r.d;
+  const addr = `${d.street}, ${d.suburb.toUpperCase()} ${d.state} ${d.postcode}`;
+  const st = statusOf(r);
+  const issuedState = st==="issued" ? "" :
+    `<div class="wm" aria-hidden="true"><b>${st==="review"?"IN REVIEW":"DRAFT"} — NOT FOR CONSTRUCTION</b></div>`;
+  const dt = s => s? new Date(s+"T00:00").toLocaleDateString("en-AU",{day:"2-digit",month:"2-digit",year:"numeric"}) : "—";
+
+  /* ---- numbered section model: builder gets a sub() helper that
+     emits numbered <h3>s and records them for the contents page ---- */
+  const sections=[];
+  function addSec(title, builder){
+    const n=sections.length+1; let s=0; const subs=[];
+    const sub=t=>{ s++; subs.push({no:`${n}.${s}`, t}); return `<h3>${n}.${s} ${esc(t)}</h3>`; };
+    sections.push({n, title, subs, html: builder(sub)});
+  }
+
+  addSec("Overview", sub=>`
+    <p>Abbot Design was engaged by ${esc(d.client)}${d.careOf?` c/- ${esc(d.careOf)}`:""} to undertake a
+     ${esc(TYPES[r.type].label.toLowerCase())} at ${esc(addr)} (${esc(d.lotDp)}) for the proposed
+     ${esc(d.projectDesc||"development")}.
+     ${d.drawingsBy?`Drawings by ${esc(d.drawingsBy)}${d.drawingNos?` (${esc(d.drawingNos)}${d.drawingsDate?`, dated ${dt(d.drawingsDate)}`:""})`:""} have been referenced.`:""}</p>
+    <p>This report has been prepared with reference to AS 1726–2017 <i>Geotechnical Site Investigations</i>,
+     AS 2870–2011 <i>Residential Slabs and Footings</i>, AS 4055:2021 <i>Wind Loads for Housing</i> and
+     AS 3798–2007 <i>Guidelines on Earthworks</i>, together with relevant local planning instruments${d.council?` of ${esc(d.council)}`:""}.</p>`);
+
+  addSec("Site description", sub=>`
+    ${sub("Site summary")}
+    <div class="kv">
+      <div>Site address</div><div>${esc(addr)} — ${esc(d.lotDp)}</div>
+      <div>Existing development</div><div>${esc(d.existing)||"—"}</div>
+      <div>Access</div><div>${esc(d.access)||"—"}</div>
+      <div>Vegetation</div><div>${esc(d.vegetation)||"—"}</div>
+      <div>Topography</div><div>Average slope ~${esc(d.slopeDeg)||"—"}°${d.aspect?`, falling to ${esc(d.aspect)}`:""}</div>
+      <div>Surface drainage</div><div>${esc(d.drainage)||"—"}</div>
+      <div>Neighbouring environment</div><div>${esc(d.neighbours)||"—"}</div>
+    </div>
+    ${r.siteFigure?`<figure style="margin:.8rem 0;border:1px solid #bbb;padding:.3rem;max-width:560px">
+      <img src="${r.siteFigure}" alt="${esc(r.siteFigureCap||"Site location image")}" style="width:100%;display:block">
+      <figcaption style="font-size:.8rem;padding-top:.25rem"><b>Figure 1:</b> ${esc(r.siteFigureCap||"Site location")}</figcaption></figure>`:""}
+    ${sub("Geology")}
+    <p>${esc(d.geologyUnit)||"—"}${d.geologyMap?` (${esc(d.geologyMap)})`:""}</p>
+    ${sub("Site history & fill risk")}
+    <p>${nl(d.history)||"—"}</p>`);
+
+  if(r.type!=="desktop"){
+    addSec("Site investigation", sub=>`
+      <p>Fieldwork was undertaken on <b>${dt(d.fieldDate)}</b>${d.operator?` by ${esc(d.operator)}`:""}${d.weather?` (${esc(d.weather)})`:""}.
+       ${d.equipment?esc(d.equipment):""} The investigation was scoped to the proposed development and the site's known
+       history before drilling commenced. Groundwater: ${esc(d.groundwater)}.</p>
+      ${r.boreholes.length?sub("Borehole summary")+`
+       <table><tr><th>Hole</th><th>Method</th><th>Depth</th><th>Water</th><th>Profile</th></tr>
+       ${r.boreholes.map((b,i)=>`<tr><td>BH${i+1}</td><td>${esc(b.method)}</td><td>${esc(b.depth)} m</td><td>${esc(b.water)}</td>
+         <td>${b.layers.map(L=>`${esc(L.from)}–${esc(L.to)} m: ${esc(L.uscs)} ${esc(L.desc)}`).join("<br>")||"—"}</td></tr>`).join("")}</table>`:""}
+      ${r.dcps.length?sub("Dynamic cone penetrometer tests (AS 1289.6.3.2)")+`
+       <table><tr><th>Test</th><th>Result</th><th>Note</th></tr>
+       ${r.dcps.map((x,i)=>`<tr><td>DCP ${i+1}</td><td>Refusal @ ${esc(x.depth)} m</td><td>${esc(x.note)}</td></tr>`).join("")}</table>`:""}
+      ${r.samples.length?sub("Laboratory results")+`
+       <p>${d.labName?`Testing by ${esc(d.labName)}`:""}${d.labDate?`, ${dt(d.labDate)}`:""}.</p>
+       <table><tr><th>Sample</th><th>Borehole</th><th>Depth (m)</th><th>Material</th><th>LL %</th><th>LS %</th></tr>
+       ${r.samples.map((s,i)=>`<tr><td>S${i+1}</td><td>${esc(s.bh)}</td><td>${esc(s.depth)}</td><td>${esc(s.desc)}</td><td>${esc(s.ll)}</td><td>${esc(s.ls)}</td></tr>`).join("")}</table>`:""}`);
+
+    addSec("Site classification (AS 2870)", sub=>`
+      <div class="classbox"><div>Site classification<br><b>Class ${esc(d.siteClass)||"—"}</b></div>
+       ${d.ys?`<div>Characteristic surface movement<br><b>y<sub>s</sub> ≈ ${esc(d.ys)} mm</b></div>`:""}</div>
+      ${sub("Basis of classification")}
+      <p>${nl(d.classJust)}</p>
+      ${d.bearing?sub("Allowable bearing pressures")+`<p>${nl(d.bearing)}</p>`:""}`);
+
+    addSec("Wind classification (AS 4055)", sub=>`
+      <p>Region ${esc(d.windRegion)}${d.terrain?`, terrain ${esc(d.terrain)}`:""}${d.topo?`, topographic class ${esc(d.topo)}`:""}${d.shielding?`, shielding ${esc(d.shielding)}`:""}.</p>
+      <div class="classbox"><div>Design wind classification<br><b>${esc(d.windClass)||"—"}</b></div></div>
+      ${d.windNote?`<p>A detailed site-specific assessment to AS/NZS 1170.2 may yield a lower design wind speed than the
+       simplified AS 4055 method, with corresponding savings in framing, tie-downs and glazing. Abbot Design can provide
+       this assessment on request.</p>`:""}`);
+  }
+
+  addSec("Recommendations", sub=>`
+    ${d.footings.length?sub("Suitable footing systems")+`
+     <p>The site is considered suitable for the following footing systems, subject to the requirements below:</p>
+     <ul>${d.footings.map(f=>`<li>${esc(f)}</li>`).join("")}</ul>`:""}
+    ${d.founding?sub("Founding requirements")+`<p>${nl(d.founding)}</p>`:""}
+    ${(d.recRows&&d.recRows.length)?sub("Geotechnical recommendations")+`
+     <table><tr><th style="width:26%">Recommendation</th><th>Description</th></tr>
+     ${d.recRows.map(x=>`<tr><td><b>${esc(x.area)}</b></td><td>${mdlite(x.desc)}</td></tr>`).join("")}</table>`:""}
+    ${d.hazards?sub("Geotechnical hazards & risk")+`<p>${nl(d.hazards)}</p>`:""}
+    ${d.holds.length?sub("Inspections & hold points")+`
+     <p>The following inspections by Abbot Design are required for this report to remain valid through construction and
+      to support final certification:</p><ul>${d.holds.map(h=>`<li>${esc(h)}</li>`).join("")}</ul>`:""}`);
+
+  addSec("Report certification", sub=>`
+    <p>For and on behalf of ${esc(FIRM.entity)}:</p>
+    <div class="sigs">
+      <div class="sig">${d.authorSig?`<img class="sigimg" src="${d.authorSig}" alt="Signature of ${esc(d.author)}">`:`<div class="line"></div>`}
+        <p><b>${esc(d.author)||"—"}</b> ${d.authorQual?esc(d.authorQual):""}</p>
+        <p>Author${d.authorReg?` · Registration ${esc(d.authorReg)}`:""}</p>
+        <p>Date: ${dt(d.dateIssued)}</p></div>
+      <div class="sig">${d.reviewerSig?`<img class="sigimg" src="${d.reviewerSig}" alt="Signature of ${esc(d.reviewer)}">`:`<div class="line"></div>`}
+        <p><b>${esc(d.reviewer)||"—"}</b> ${d.reviewerQual?esc(d.reviewerQual):""}</p>
+        <p>Reviewer${d.reviewerReg?` · Registration ${esc(d.reviewerReg)}`:""}</p>
+        <p>Date: ${dt(d.dateIssued)}</p></div>
+    </div>`);
+
+  addSec("Limitations", sub=>`<p>${nl(d.limitations)}</p>`);
+
+  addSec("References", sub=>{
+    const refs=[
+      "Standards Australia 2017, Geotechnical Site Investigations, AS 1726–2017.",
+      "Standards Australia 2011, Residential Slabs and Footings, AS 2870–2011.",
+      "Standards Australia 2021, Wind Loads for Housing, AS 4055:2021.",
+      "Standards Australia 2007, Guidelines on Earthworks for Commercial and Residential Developments, AS 3798–2007."];
+    if(r.dcps.length) refs.push("Standards Australia 1997, Methods of Testing Soils for Engineering Purposes, AS 1289.6.3.2–1997.");
+    if(d.windNote) refs.push("Standards Australia/Standards New Zealand 2021, Structural Design Actions Part 2: Wind Actions, AS/NZS 1170.2:2021.");
+    if(r.type==="comprehensive"||d.hazards) refs.push("Australian Geomechanics Society 2007, Practice Note Guidelines for Landslide Risk Management, Australian Geomechanics, vol. 42 no. 1.");
+    refs.push("CSIRO Publishing 2012, Foundation Maintenance and Footing Performance: A Homeowner's Guide, Building Technology File BTF-18.");
+    refs.push("Australian Geomechanics Society 2007, Australian GeoGuide LR8 — Hillside Construction Practice.");
+    if(d.geologyMap) refs.push(`Geological mapping: ${esc(d.geologyMap)}.`);
+    if(d.drawingsBy) refs.push(`Architectural documentation: ${esc(d.drawingsBy)}${d.drawingNos?`, drawings ${esc(d.drawingNos)}`:""}${d.drawingsDate?`, dated ${dt(d.drawingsDate)}`:""}.`);
+    return `<ul>${refs.map(x=>`<li>${x}</li>`).join("")}</ul>`;
+  });
+
+  const LEGEND_HTML = `
+    <table><tr><th>Moisture</th><th>Consistency — clays</th><th>Density — sands</th><th>Water</th></tr>
+     <tr><td>D — dry<br>M — moist<br>W — wet</td>
+         <td>VS — very soft<br>S — soft<br>F — firm<br>St — stiff<br>VSt — very stiff<br>H — hard</td>
+         <td>VL — very loose<br>L — loose<br>MD — medium dense<br>D — dense<br>VD — very dense</td>
+         <td>NE — not encountered<br>E — encountered</td></tr></table>
+    <h3>Investigation methods</h3>
+    <p><b>Push tube (PT/PTH):</b> a ~50&nbsp;mm tube pushed into the ground by machine or hand; recovers a relatively
+       undisturbed sample. <b>Hand auger (HA):</b> a 75&nbsp;mm auger screwed into the ground by hand.
+       <b>Auger drilling (AD):</b> continuous spiral flight auger, withdrawn at intervals for sampling.
+       <b>Test pit (TP):</b> excavated by backhoe or excavator for close examination of in-situ soil.
+       <b>Dynamic cone penetrometer (DCP):</b> a rod driven by a falling weight, blows recorded per 100&nbsp;mm
+       increment, to AS 1289.6.3.2. Laboratory testing, where specified, is carried out by NATA-accredited laboratories.</p>`;
+
+  const CLASSDEFS_HTML = `
+    <table><tr><th>Class</th><th>General definition (AS 2870)</th></tr>
+     <tr><td>A</td><td>Most sand and rock sites; little or no ground movement from moisture changes</td></tr>
+     <tr><td>S</td><td>Slightly reactive clay sites; slight ground movement from moisture changes</td></tr>
+     <tr><td>M</td><td>Moderately reactive clay or silt sites; moderate ground movement from moisture changes</td></tr>
+     <tr><td>H1</td><td>Highly reactive clay sites; high ground movement from moisture changes</td></tr>
+     <tr><td>H2</td><td>Highly reactive clay sites; very high ground movement from moisture changes</td></tr>
+     <tr><td>E</td><td>Extremely reactive sites; extreme ground movement from moisture changes</td></tr>
+     <tr><td>P</td><td>Problem sites: soft soils, fill, landslip, mine subsidence, collapsing or erodible soils,
+        abnormal moisture conditions, or sites not otherwise classifiable</td></tr></table>
+    <p>The suffix “-D” denotes a site subject to deep-seated moisture variation. Reactive sites consist of clay soils
+       that swell on wetting and shrink on drying; the resulting movement can damage lightly loaded structures.</p>`;
+
+  const FURTHER_HTML = `<h3>Further guidance</h3>
+    <p>For homeowner guidance on foundation maintenance, refer to CSIRO Building Technology File BTF-18,
+       <i>Foundation Maintenance and Footing Performance: A Homeowner's Guide</i>. For hillside sites, refer to
+       Australian GeoGuide LR8 (Australian Geomechanics Society). Copies are available from Abbot Design on request.</p>`;
+
+  const BORELOG_HTML = (r.boreholes.length||r.dcps.length) ? `
+    ${r.boreholes.map((b,i)=>`<h3>Borehole log — BH${i+1}</h3>
+     <p><small>Method: ${esc(b.method)||"—"} · Terminated at ${esc(b.depth)||"—"} m · Water: ${esc(b.water)} ·
+        Logged ${dt(d.fieldDate)}${d.operator?` by ${esc(d.operator)}`:""}</small></p>
+     <table><tr><th style="width:18%">Depth (m)</th><th style="width:12%">USCS</th><th>Description</th></tr>
+      ${b.layers.length?b.layers.map(L=>`<tr><td>${esc(L.from)} – ${esc(L.to)}</td><td>${esc(L.uscs)}</td><td>${esc(L.desc)}</td></tr>`).join("")
+        :`<tr><td colspan="3">No layers logged</td></tr>`}
+      <tr><td colspan="3"><i>Borehole terminated at ${esc(b.depth)||"—"} m below ground level</i></td></tr></table>`).join("")}
+    ${r.dcps.length?`<h3>Dynamic cone penetration test results (AS 1289.6.3.2)</h3>
+     <table><tr><th>Test</th><th>Refusal depth</th><th>Result note</th></tr>
+      ${r.dcps.map((x,i)=>`<tr><td>DCP ${i+1}</td><td>${esc(x.depth)} m</td><td>${esc(x.note)}</td></tr>`).join("")}</table>`:""}` : "";
+
+  /* Fixed appendix scheme: A site plans · B site photos · C bore logs/DCP · D information sheets */
+  const apps=[];
+  if((r.plans||[]).length) apps.push({letter:"A", t:"Site plans",
+    html:(r.plans||[]).map((p,i)=>`<figure style="margin:.8rem 0;border:1px solid #bbb;padding:.3rem;${i>0?"break-before:page;":""}">
+      <img src="${p.dataUrl}" alt="${esc(p.caption||("Site plan "+(i+1)))}" style="width:100%;display:block">
+      <figcaption style="font-size:.8rem;padding-top:.25rem"><b>Plan ${i+1}:</b> ${esc(p.caption||"")}</figcaption></figure>`).join("")});
+  if(r.photos.length) apps.push({letter:"B", t:"Site photos",
+    html:`<div class="photos">${r.photos.map((p,i)=>`<figure><img src="${p.dataUrl}" alt="${esc(p.caption||("Site photo "+(i+1)))}">
+      <figcaption><b>Photo ${i+1}:</b> ${esc(p.caption||"")}</figcaption></figure>`).join("")}</div>`});
+  const atts = r.attachments||[];
+  const ATTACH_HTML = atts.length ? `
+    <h3>Attached test result documents</h3>
+    <table><tr><th>Document</th><th style="width:24%">Source</th><th style="width:16%">Date</th></tr>
+     ${atts.map(a=>`<tr><td>${esc(a.title||a.name)}${a.kind==="pdf"?" <small>(PDF — appended to this report)</small>":""}</td>
+       <td>${esc(a.source)||"—"}</td><td>${a.date?dt(a.date):"—"}</td></tr>`).join("")}</table>
+    ${atts.filter(a=>a.kind==="image").map((a,i)=>`<figure style="margin:.8rem 0;border:1px solid #bbb;padding:.3rem;${i>0?"break-before:page;":""}">
+      <img src="${a.dataUrl}" alt="${esc(a.title||"Result document")}" style="width:100%;display:block">
+      <figcaption style="font-size:.8rem;padding-top:.25rem"><b>${esc(a.title||a.name)}</b>${a.source?` — ${esc(a.source)}`:""}${a.date?`, ${dt(a.date)}`:""}</figcaption></figure>`).join("")}` : "";
+  if(r.type!=="desktop" && (BORELOG_HTML||ATTACH_HTML)) apps.push({letter:"C", t:"Bore logs | DCP test results", html:BORELOG_HTML+ATTACH_HTML});
+  {
+    let info="";
+    if(r.type!=="desktop" && d.incLegend) info += `<h3>Borehole log legend</h3>`+LEGEND_HTML.replace('<h3>Investigation methods</h3>','<h3>Investigation methods</h3>');
+    if(r.type!=="desktop" && d.incClassDefs) info += `<h3>AS 2870 site classification definitions</h3>`+CLASSDEFS_HTML;
+    if(d.incGeneral && d.appGeneral) info += `<h3>General notes</h3><p>${nl(d.appGeneral)}</p>`;
+    info += FURTHER_HTML;
+    apps.push({letter:"D", t:"Information sheets", html:info});
+  }
+
+  const toc = `<ul class="toc">
+    <li><b>—</b> Document status &amp; distribution</li>
+    <li><b>—</b> What to do with this report</li>
+    ${sections.map(s=>`<li><b>${s.n}.</b> ${esc(s.title)}</li>
+      ${s.subs.map(x=>`<li class="tsub"><b>${x.no}</b> ${esc(x.t)}</li>`).join("")}`).join("")}
+    ${apps.map(a=>`<li><b>${a.letter}</b> Appendix ${a.letter} — ${esc(a.t)}</li>`).join("")}
+  </ul>`;
+
+  $("rpt").innerHTML = `
+  ${issuedState}
+  <div class="rpt-cover">
+    <div class="firm">${esc(FIRM.name)}</div>
+    <div class="tag">${esc(FIRM.tagline)}</div>
+    <h1>${esc(TYPES[r.type].label)}</h1>
+    <p class="proj"><b>${esc(d.projectDesc||"Proposed development")}</b></p>
+    <p class="proj">${esc(addr)}</p>
+    <p class="proj">${esc(d.lotDp)}</p>
+    <div class="meta">Prepared for: <b>${esc(d.client)}</b>${d.careOf?` c/- ${esc(d.careOf)}`:""}<br>
+      Job No: ${esc(d.jobNo)} · Revision ${esc(d.revision)} · ${dt(d.dateIssued)}</div>
+    ${r.siteFigure?`<figure class="coverfig"><img src="${r.siteFigure}" alt="${esc(r.siteFigureCap||"Site location")}">
+      <figcaption>${esc(r.siteFigureCap||"Site location")}</figcaption></figure>`:""}
+    <div class="contactstrip">${esc(FIRM.address)} · Ph ${esc(FIRM.phone)} · ${esc(FIRM.email)} · ${esc(FIRM.web)}<br>
+      ${esc(FIRM.entity)} · ${esc(FIRM.abn)}</div>
+  </div>
+
+  <h2>Contents</h2>
+  ${toc}
+
+  <h2>Document status</h2>
+  <table>
+   <tr><th style="width:12%">Version</th><th>Author</th><th>Reviewer — approved for issue</th><th style="width:16%">Date</th><th style="width:14%">Status</th></tr>
+   <tr><td>${esc(d.revision)}</td>
+       <td style="text-align:center">${d.authorSig?`<img class="tblsig" src="${d.authorSig}" alt="Signature of ${esc(d.author)}">`:""}
+           ${esc(d.author)}<br><small>${esc(d.authorQual)}</small>${d.authorReg?`<br><small>Reg: ${esc(d.authorReg)}</small>`:""}</td>
+       <td style="text-align:center">${d.reviewerSig?`<img class="tblsig" src="${d.reviewerSig}" alt="Signature of ${esc(d.reviewer)}">`:""}
+           ${esc(d.reviewer)}<br><small>${esc(d.reviewerQual)}</small>${d.reviewerReg?`<br><small>Reg: ${esc(d.reviewerReg)}</small>`:""}</td>
+       <td>${dt(d.dateIssued)}</td><td>${r.issued?`Issued ${new Date(r.issued).toLocaleDateString("en-AU")}`:"DRAFT"}</td></tr></table>
+  ${(d.dist&&d.dist.length)?`<h3>Document distribution</h3>
+  <table><tr><th>To</th><th style="width:22%">Format</th><th style="width:18%">Date</th></tr>
+   ${d.dist.map(x=>`<tr><td>${esc(x.to)}</td><td>${esc(x.format)}</td><td>${dt(x.date)}</td></tr>`).join("")}</table>`:""}
+
+  <h2>What to do with this report</h2>
+  <p>This report supports your approval pathway and informs structural design and construction. Provide a copy to your
+     building designer or architect, your structural engineer, your certifier, your builder and your excavation contractor.
+     If any of your project team has questions about its contents, contact Abbot Design for clarification — most problems
+     are cheapest to solve before concrete is poured.</p>
+  ${d.holds.length?`<p><b>Stages at which Abbot Design should be re-engaged:</b></p><ul>${d.holds.map(h=>`<li>${esc(h)}</li>`).join("")}</ul>`:""}
+
+  ${sections.map(s=>`<h2>${s.n}. ${esc(s.title)}</h2>${s.html}`).join("")}
+
+  ${apps.map(a=>`<h2 class="pagebreak">Appendix ${a.letter} — ${esc(a.t)}</h2>${a.html}`).join("")}
+
+  <footer><span>${esc(FIRM.name)} · ${esc(FIRM.address)} · Ph ${esc(FIRM.phone)} · ${esc(FIRM.abn)}</span>
+   <span>Job ${esc(d.jobNo)} · Rev ${esc(d.revision)} · ${r.issued?"ISSUED":"DRAFT"}</span></footer>`;
+
+  const pdfAtts=(r.attachments||[]).filter(a=>a.kind==="pdf");
+  const gaps = requirements(r);
+  $("gapbox").hidden = gaps.length===0 && pdfAtts.length===0;
+  $("gapbox").innerHTML = (gaps.length? `<b>Draft — ${gaps.length} required item(s) outstanding.</b>
+    <ul>${gaps.map(g=>`<li>${esc(g.label)}</li>`).join("")}</ul>` : "") +
+    (pdfAtts.length? `<p style="margin:.4rem 0 0"><b>${pdfAtts.length} PDF attachment(s)</b> are listed in Appendix C but can't be
+     merged by the browser — after saving this report as a PDF, append them to it (Download buttons are on the Results page).
+     Automatic merging is planned for the server-rendered PDF phase.</p>` : "");
+  $("issuebtn").disabled = gaps.length>0 || st!=="review" || !d.reviewerSig;
+  $("issuebtn").textContent = st==="issued" ? "Issued ✓" :
+    st==="draft" ? "Issue (submit for review first)" :
+    !d.reviewerSig ? "Issue (reviewer signature needed)" : "Issue final report…";
+}
+
+/* ============================================================
+   Photo capture & compression
+   ============================================================ */
+let pdfjsReady=null;
+function loadPdfjs(){
+  if(window.pdfjsLib && window.pdfjsLib.getDocument) return Promise.resolve(window.pdfjsLib);
+  if(pdfjsReady) return pdfjsReady;
+  pdfjsReady = new Promise((res,rej)=>{
+    const s=document.createElement("script");
+    s.src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+    s.onload=()=>{ try{
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+        res(window.pdfjsLib);
+      }catch(e){ pdfjsReady=null; rej(e); } };
+    s.onerror=()=>{ pdfjsReady=null; rej(new Error("pdfjs load failed")); };
+    document.head.appendChild(s);
+  });
+  return pdfjsReady;
+}
+async function pdfToImages(file){
+  const lib = await loadPdfjs();
+  const buf = await file.arrayBuffer();
+  const doc = await lib.getDocument({data:buf}).promise;
+  const pages=[];
+  for(let p=1; p<=doc.numPages; p++){
+    const page = await doc.getPage(p);
+    let vp = page.getViewport({scale:1});
+    const scale = Math.min(2.2, 1500/vp.width);
+    vp = page.getViewport({scale});
+    const c=document.createElement("canvas"); c.width=Math.round(vp.width); c.height=Math.round(vp.height);
+    await page.render({canvasContext:c.getContext("2d"), viewport:vp}).promise;
+    pages.push(c.toDataURL("image/jpeg",0.8));
+  }
+  return pages;
+}
+function compressImage(file){
+  return new Promise((res,rej)=>{
+    const rd=new FileReader();
+    rd.onerror=()=>rej(new Error("read failed"));
+    rd.onload=()=>{
+      const img=new Image();
+      img.onload=()=>{
+        const MAX=1400, sc=Math.min(1, MAX/Math.max(img.width,img.height));
+        const c=document.createElement("canvas");
+        c.width=Math.round(img.width*sc); c.height=Math.round(img.height*sc);
+        c.getContext("2d").drawImage(img,0,0,c.width,c.height);
+        res(c.toDataURL("image/jpeg",0.72));
+      };
+      img.onerror=()=>rej(new Error("decode failed"));
+      img.src=rd.result;
+    };
+    rd.readAsDataURL(file);
+  });
+}
+function imgError(file){
+  const heic=/heic|heif/i.test(file.type||"")||/\.hei[cf]$/i.test(file.name||"");
+  note(heic ? "HEIC photos can't be read by this browser. On iPhone: Settings → Camera → Formats → Most Compatible (JPEG), or share the photo as JPEG."
+            : "That file couldn't be read as an image (JPG or PNG work best).");
+}
+function addPhotos(files){
+  [...files].forEach(f=>compressImage(f).then(dataUrl=>{
+    report().photos.push({caption:"",dataUrl}); saveDb(); renderEditor(); note("Photo added.");
+    if(report().photos.length>=12) note("Large photo sets can exceed device storage — export regularly.");
+  }).catch(()=>imgError(f)));
+}
+function initSigPads(){
+  document.querySelectorAll("canvas.sigpad").forEach(cv=>{
+    const key=cv.dataset.sig, ctx=cv.getContext("2d");
+    ctx.clearRect(0,0,cv.width,cv.height);
+    ctx.lineWidth=2.2; ctx.lineCap="round"; ctx.lineJoin="round"; ctx.strokeStyle="#16212a";
+    const existing=report().d[key];
+    if(existing){ const im=new Image(); im.onload=()=>ctx.drawImage(im,0,0,cv.width,cv.height); im.src=existing; }
+    if(cv.dataset.wired) return; cv.dataset.wired="1";
+    let drawing=false;
+    const pos=ev=>{ const b=cv.getBoundingClientRect();
+      return [ (ev.clientX-b.left)*cv.width/b.width, (ev.clientY-b.top)*cv.height/b.height ]; };
+    cv.addEventListener("pointerdown",ev=>{ drawing=true; cv.setPointerCapture(ev.pointerId);
+      const [x,y]=pos(ev); ctx.beginPath(); ctx.moveTo(x,y); ev.preventDefault(); });
+    cv.addEventListener("pointermove",ev=>{ if(!drawing) return; const [x,y]=pos(ev); ctx.lineTo(x,y); ctx.stroke(); });
+    const done=ev=>{ if(!drawing) return; drawing=false;
+      report().d[key]=cv.toDataURL("image/png"); saveDb(); };
+    cv.addEventListener("pointerup",done); cv.addEventListener("pointercancel",done);
+  });
+}
+function renderSiteFig(){
+  const el=document.getElementById("sitefigwrap"); if(!el) return;
+  const r=report();
+  el.innerHTML = r.siteFigure ? `<figure style="margin:0;max-width:420px;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:#fff">
+    <img src="${r.siteFigure}" alt="${esc(r.siteFigureCap||"Site location image")}" style="width:100%;display:block">
+    <figcaption style="padding:.5rem">
+      <label for="sitefigcap">Image caption</label>
+      <input id="sitefigcap" value="${esc(r.siteFigureCap)}" placeholder="e.g. Site location — source: SIX Maps NSW">
+      <button type="button" id="delsitefig" class="danger" style="margin-top:.4rem;width:100%">Remove image</button>
+    </figcaption></figure>` : "";
+}
+
+/* ============================================================
+   Export / import
+   ============================================================ */
+function exportReport(id){
+  const r=db[id]; const blob=new Blob([JSON.stringify(r,null,1)],{type:"application/json"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+  a.download=`abbot-${(r.d.jobNo||r.id)}.json`; a.click(); URL.revokeObjectURL(a.href);
+}
+
+/* ============================================================
+   Events
+   ============================================================ */
+document.addEventListener("click",e=>{
+  const t=e.target.closest("button,a"); if(!t) return;
+  if(t.dataset.newtype){ const r=blank(t.dataset.newtype); db[r.id]=r; currentId=r.id; sectionIdx=0; saveDb(); show("editor"); renderEditor(); }
+  if(t.dataset.open){ currentId=t.dataset.open; sectionIdx=0; show("editor"); renderEditor(); }
+  if(t.dataset.export) exportReport(t.dataset.export);
+  if(t.dataset.del){ ask("Delete this report from this device? Export first if you need a copy.","Delete").then(ok=>{ if(ok){ delete db[t.dataset.del]; saveDb(); renderHome(); } }); }
+  if(t.id==="importbtn") $("importfile").click();
+  if(t.id==="homebtn"){ show("home"); renderHome(); }
+  if(t.id==="prevbtn"){ if(sectionIdx>0){sectionIdx--; renderEditor();} }
+  if(t.id==="nextbtn"){ const n=visibleSections().length;
+    if(sectionIdx<n-1){ sectionIdx++; renderEditor(); } else { buildReport(); show("preview"); } }
+  if(t.id==="previewbtn"){ buildReport(); show("preview"); }
+  if(t.id==="backedit"){ show("editor"); renderEditor(); }
+  if(t.id==="printbtn"){ window.print();
+    if(inFrame()) note("Embedded previews block printing — open the deployed app in a full browser tab to print or save the PDF."); }
+  if(t.id==="exportthis") exportReport(currentId);
+  if(t.id==="issuebtn"){
+    const rp=report(), d=rp.d;
+    if(statusOf(rp)!=="review"){ note("Submit for review first (Review & issue page)."); return; }
+    if(!d.reviewerSig){ note("Reviewer must sign before issue (Review & issue page)."); return; }
+    ask(`Issue this report as final?\n\nAuthor: ${d.author}\nReviewer: ${d.reviewer}\n\nThe watermark is removed and the issue is recorded. Any later edit reopens it as a new draft revision.`,"Issue report")
+      .then(ok=>{ if(ok){ rp.issued=new Date().toISOString(); rp.status="issued"; saveDb(); buildReport(); note("Report issued. Print or save the PDF now."); }});
+  }
+  if(t.id==="addbh"){ report().boreholes.push({method:"",depth:"",water:"NE — not encountered",layers:[]}); saveDb(); renderBoreholes(); renderTabs(); }
+  if(t.dataset.delbh!==undefined){ report().boreholes.splice(+t.dataset.delbh,1); saveDb(); renderBoreholes(); renderTabs(); }
+  if(t.dataset.addlayer!==undefined){ report().boreholes[+t.dataset.addlayer].layers.push({from:"",to:"",uscs:"",desc:""}); saveDb(); renderBoreholes(); }
+  if(t.dataset.dellayer){ const [i,j]=t.dataset.dellayer.split(":").map(Number); report().boreholes[i].layers.splice(j,1); saveDb(); renderBoreholes(); }
+  if(t.id==="adddcp"){ report().dcps.push({depth:"",note:""}); saveDb(); renderDcps(); }
+  if(t.dataset.deldcp!==undefined){ report().dcps.splice(+t.dataset.deldcp,1); saveDb(); renderDcps(); }
+  if(t.id==="addsample"){ report().samples.push({bh:"",depth:"",ll:"",ls:"",desc:""}); saveDb(); renderSamples(); }
+  if(t.dataset.delsample!==undefined){ report().samples.splice(+t.dataset.delsample,1); saveDb(); renderSamples(); }
+  if(t.id==="takephoto") $("photofile").click();
+  if(t.id==="addplan") $("planfile").click();
+  if(t.id==="addatt") $("attfile").click();
+  if(t.dataset.delatt!==undefined){ report().attachments.splice(+t.dataset.delatt,1); saveDb(); renderAttachments(); }
+  if(t.dataset.dlatt!==undefined){ const a=report().attachments[+t.dataset.dlatt];
+    const link=document.createElement("a"); link.href=a.dataUrl;
+    link.download=(a.title||a.name||"attachment").replace(/[^\w.-]+/g,"_")+(a.kind==="pdf"?".pdf":".jpg"); link.click(); }
+  if(t.dataset.delplan!==undefined){ report().plans.splice(+t.dataset.delplan,1); saveDb(); renderPlans(); }
+  if(t.id==="adddist"){ (report().d.dist||(report().d.dist=[])).push({to:"",format:"PDF",date:report().d.dateIssued||""}); saveDb(); renderDist(); }
+  if(t.dataset.deldist!==undefined){ report().d.dist.splice(+t.dataset.deldist,1); saveDb(); renderDist(); }
+  if(t.id==="addrec"){ (report().d.recRows||(report().d.recRows=[])).push({area:REC_AREAS[0],desc:""}); saveDb(); renderRecRows(); }
+  if(t.dataset.delrec!==undefined){ report().d.recRows.splice(+t.dataset.delrec,1); saveDb(); renderRecRows(); }
+  if(t.id==="ctx"){ const r=report();
+    note(r?`${r.d.street||"No address yet"}, ${r.d.suburb||""} — Job ${r.d.jobNo||"—"} (${TYPES[r.type].label})`:"No report open."); }
+  if(t.id==="sitefigbtn") $("sitefigfile").click();
+  if(t.dataset.clearsig){ report().d[t.dataset.clearsig]=""; saveDb(); initSigPads(); }
+  if(t.id==="submitreview"){
+    const gaps=requirements(report());
+    if(gaps.length){ note(`Complete ${gaps.length} required item(s) first — see the list below.`); renderReviewGaps(); }
+    else if(!report().d.authorSig){ note("Sign as author before submitting."); }
+    else ask(`Submit to ${report().d.reviewer||"the reviewer"} for review?\n\nThe report locks as "Awaiting review" — any edit returns it to draft.`,"Submit")
+      .then(ok=>{ if(ok){ report().status="review"; report().submitted=new Date().toISOString(); saveDb(); renderEditor(); note("Submitted for review."); }});
+  }
+  if(t.id==="reqchanges"){
+    ask("Return this report to the author as a draft?","Request changes").then(ok=>{
+      if(ok){ report().status="draft"; saveDb(); renderEditor(); note("Returned to draft."); }});
+  }
+  if(t.id==="delsitefig"){ report().siteFigure=null; report().siteFigureCap=""; saveDb(); renderSiteFig(); }
+  if(t.dataset.delphoto!==undefined){ report().photos.splice(+t.dataset.delphoto,1); saveDb(); renderPhotos(); }
+  if(t.dataset.goto){ e.preventDefault(); sectionIdx=visibleSections().findIndex(s=>s.id===t.dataset.goto); show("editor"); renderEditor(); }
+});
+
+document.addEventListener("input",e=>{
+  const el=e.target; const r=report(); if(!r) return;
+  if(r.issued){ r.issued=null; r.status="draft"; r.d.revision=String((parseInt(r.d.revision)||1)+1);
+    note(`Edited after issue — reopened as draft, revision ${r.d.revision}.`); renderTabs(); }
+  else if((r.status||"draft")==="review"){ r.status="draft";
+    note("Returned to draft — resubmit for review after edits."); renderTabs(); }
+  el.setAttribute("data-touched","");
+  if(el.dataset.k!==undefined){ r.d[el.dataset.k]= el.value; saveDb();
+    if(["jobNo","street"].includes(el.dataset.k)) $("ctx").textContent=`${r.d.street||"New report"} · Job ${r.d.jobNo||"—"}`; }
+  if(el.id==="f_type"){ r.type=el.value; sectionIdx=Math.min(sectionIdx, visibleSections().length-1); saveDb(); renderEditor(); return; }
+  if(el.id==="f_windNote"){ r.d.windNote=el.checked; saveDb(); }
+  if(el.dataset.bool){ r.d[el.dataset.bool]=el.checked; saveDb(); }
+  if(el.dataset.arr){ const arr=r.d[el.dataset.arr];
+    if(el.checked && !arr.includes(el.value)) arr.push(el.value);
+    if(!el.checked) r.d[el.dataset.arr]=arr.filter(v=>v!==el.value); saveDb(); }
+  if(el.dataset.bh!==undefined){
+    const b=r.boreholes[+el.dataset.bh];
+    if(el.dataset.layer!==undefined) b.layers[+el.dataset.layer][el.dataset.f]=el.value;
+    else b[el.dataset.f]=el.value; saveDb(); }
+  if(el.dataset.dcp!==undefined){ r.dcps[+el.dataset.dcp][el.dataset.f]=el.value; saveDb(); }
+  if(el.dataset.sample!==undefined){ r.samples[+el.dataset.sample][el.dataset.f]=el.value; saveDb(); }
+  if(el.dataset.photo!==undefined){ r.photos[+el.dataset.photo].caption=el.value; saveDb(); }
+  if(el.dataset.plan!==undefined){ r.plans[+el.dataset.plan].caption=el.value; saveDb(); }
+  if(el.dataset.att!==undefined){ r.attachments[+el.dataset.att][el.dataset.f]=el.value; saveDb(); }
+  if(el.dataset.dist!==undefined){ r.d.dist[+el.dataset.dist][el.dataset.f]=el.value; saveDb(); }
+  if(el.dataset.rec!==undefined){ r.d.recRows[+el.dataset.rec][el.dataset.f]=el.value; saveDb();
+    if(el.dataset.f==="area"){ const head=el.closest(".rowitem").querySelector(".rowhead b"); if(head) head.textContent=el.value; } }
+  if(el.id==="sitefigcap"){ r.siteFigureCap=el.value; saveDb(); }
+});
+document.addEventListener("change",e=>{
+  if(e.target.id==="photofile"){ addPhotos(e.target.files); e.target.value=""; }
+  if(e.target.id==="attfile"){
+    [...e.target.files].forEach(f=>{
+      if(f.type==="application/pdf"){
+        note("Converting PDF pages…");
+        pdfToImages(f).then(pages=>{
+          const base=f.name.replace(/\.pdf$/i,"");
+          pages.forEach((d,i)=>(report().attachments||(report().attachments=[])).push(
+            {kind:"image", name:f.name, title: pages.length>1?`${base} — page ${i+1} of ${pages.length}`:base,
+             source:"", date:"", dataUrl:d}));
+          saveDb(); renderEditor(); note(`Added ${pages.length} page(s) from ${f.name}.`);
+        }).catch(()=>{
+          const rd=new FileReader();
+          rd.onload=()=>{ (report().attachments||(report().attachments=[])).push(
+            {kind:"pdf", name:f.name, title:f.name.replace(/\.pdf$/i,""), source:"", date:"", dataUrl:rd.result});
+            saveDb(); renderEditor();
+            note("Couldn't convert the PDF to pages (offline?). Stored as a PDF — reconnect and re-upload to embed it as pages."); };
+          rd.onerror=()=>note("That PDF couldn't be read.");
+          rd.readAsDataURL(f);
+        });
+      } else {
+        compressImage(f).then(d=>{ (report().attachments||(report().attachments=[])).push(
+          {kind:"image", name:f.name, title:"", source:"", date:"", dataUrl:d});
+          saveDb(); renderEditor(); note("Result document added."); }).catch(()=>imgError(f));
+      }
+    }); e.target.value=""; }
+  if(e.target.id==="planfile"){ [...e.target.files].forEach(f=>{
+      if(f.type==="application/pdf"){
+        note("Converting PDF pages…");
+        pdfToImages(f).then(pages=>{
+          const base=f.name.replace(/\.pdf$/i,"");
+          pages.forEach((d,i)=>(report().plans||(report().plans=[])).push(
+            {caption: pages.length>1?`${base} — page ${i+1} of ${pages.length}`:base, dataUrl:d}));
+          saveDb(); renderEditor(); note(`Added ${pages.length} plan page(s).`);
+        }).catch(()=>note("Couldn't convert the PDF to pages — reconnect to the internet and try again, or upload an image."));
+      } else compressImage(f).then(d=>{
+        (report().plans||(report().plans=[])).push({caption:"",dataUrl:d}); saveDb(); renderEditor(); note("Site plan added.");
+      }).catch(()=>imgError(f));
+    }); e.target.value=""; }
+  if(e.target.id==="sitefigfile"){ const f=e.target.files[0];
+    if(f) compressImage(f).then(d=>{ report().siteFigure=d; saveDb(); renderEditor(); note("Site image added."); })
+      .catch(()=>imgError(f));
+    e.target.value=""; }
+  if(e.target.id==="importfile"){
+    const f=e.target.files[0]; if(!f) return;
+    f.text().then(txt=>{ try{ const r=JSON.parse(txt);
+        if(!r.id||!r.d) throw 0; db[r.id]=r; saveDb(); renderHome(); note("Report imported.");
+      }catch(err){ note("That file isn't a valid Abbot report export."); }});
+    e.target.value="";
+  }
+});
+
+/* ---------- boot ---------- */
+if(!store.persistent) note("Storage unavailable here — data lives in memory only. Export to keep your work.");
+if("serviceWorker" in navigator && location.protocol==="https:") navigator.serviceWorker.register("sw.js").catch(()=>{});
+renderHome(); show("home");
+</script>
+</body>
+</html>

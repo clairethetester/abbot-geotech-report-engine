@@ -534,7 +534,7 @@ function renderTabs(){
   $("prevbtn").disabled = sectionIdx===0;
   $("nextbtn").textContent = sectionIdx===secs.length-1 ? "Preview report →" : "Next →";
   $("previewbtn").hidden = sectionIdx===secs.length-1;
-  $("ctx").textContent = `${report().d.street||"New report"} · Job ${report().d.jobNo||"—"}`;
+  updateCtx();
 }
 
 /* field helpers */
@@ -753,7 +753,7 @@ review(r){ return `
  <p class="hint" style="margin-top:0">Sign inside the dashed box — anything outside is cut off.</p>
  <div class="grid">
   <div>
-   <h3 style="margin:.2rem 0 .4rem;font-size:1rem;font-family:var(--display)">1 · Author — ${esc(r.d.author)||"author"}</h3>
+   <h3 style="margin:.2rem 0 .4rem;font-size:1rem;font-family:var(--display)">1 · Author — <span data-echo="author" data-fallback="author">${esc(r.d.author)||"author"}</span></h3>
    <canvas class="sigpad" data-sig="authorSig" width="430" height="130" aria-label="Author signature" role="img"></canvas>
    <div class="inline" style="margin-top:.4rem">
     <button type="button" data-clearsig="authorSig">Clear</button>
@@ -762,7 +762,7 @@ review(r){ return `
    ${statusOf(r)!=="draft"?`<p class="hint">Submitted ${r.submitted?new Date(r.submitted).toLocaleDateString("en-AU"):""} — editing anything returns this report to draft.</p>`:""}
   </div>
   <div>
-   <h3 style="margin:.2rem 0 .4rem;font-size:1rem;font-family:var(--display)">2 · Reviewer — ${esc(r.d.reviewer)||"reviewer"}</h3>
+   <h3 style="margin:.2rem 0 .4rem;font-size:1rem;font-family:var(--display)">2 · Reviewer — <span data-echo="reviewer" data-fallback="reviewer">${esc(r.d.reviewer)||"reviewer"}</span></h3>
    ${statusOf(r)==="draft"
      ? `<p class="hint" style="border:1.5px dashed var(--line-strong);border-radius:8px;padding:2.4rem 1rem;text-align:center;max-width:430px">Unlocks when the author submits for review.</p>`
      : `<canvas class="sigpad" data-sig="reviewerSig" width="430" height="130" aria-label="Reviewer signature" role="img"></canvas>
@@ -1371,15 +1371,26 @@ document.addEventListener("click",e=>{
   if(t.dataset.goto){ e.preventDefault(); sectionIdx=visibleSections().findIndex(s=>s.id===t.dataset.goto); show("editor"); renderEditor(); }
 });
 
-document.addEventListener("input",e=>{
-  const el=e.target; const r=report(); if(!r) return;
+function updateEchoes(){
+  const r=report(); if(!r) return;
+  document.querySelectorAll("[data-echo]").forEach(n=>{
+    n.textContent = r.d[n.dataset.echo] || n.dataset.fallback || "—"; });
+}
+function updateCtx(){
+  const r=report(); if(!r){ $("ctx").textContent=""; return; }
+  $("ctx").textContent = `${r.d.street||"New report"}${r.d.suburb?", "+r.d.suburb:""} · Job ${r.d.jobNo||"—"}`;
+}
+function bindData(e){
+  const el=e.target; if(!el || el.type==="file") return;
+  const r=report(); if(!r) return;
   if(r.issued){ r.issued=null; r.status="draft"; r.d.revision=String((parseInt(r.d.revision)||1)+1);
     note(`Edited after issue — reopened as draft, revision ${r.d.revision}.`); renderTabs(); }
   else if((r.status||"draft")==="review"){ r.status="draft";
     note("Returned to draft — resubmit for review after edits."); renderTabs(); }
   el.setAttribute("data-touched","");
   if(el.dataset.k!==undefined){ r.d[el.dataset.k]= el.value; saveDb();
-    if(["jobNo","street"].includes(el.dataset.k)) $("ctx").textContent=`${r.d.street||"New report"} · Job ${r.d.jobNo||"—"}`; }
+    if(["jobNo","street","suburb"].includes(el.dataset.k)) updateCtx();
+    updateEchoes(); }
   if(el.id==="f_type"){ r.type=el.value; sectionIdx=Math.min(sectionIdx, visibleSections().length-1); saveDb(); renderEditor(); return; }
   if(el.id==="f_windNote"){ r.d.windNote=el.checked; saveDb(); }
   if(el.dataset.bool){ r.d[el.dataset.bool]=el.checked; saveDb(); }
@@ -1399,7 +1410,12 @@ document.addEventListener("input",e=>{
   if(el.dataset.rec!==undefined){ r.d.recRows[+el.dataset.rec][el.dataset.f]=el.value; saveDb();
     if(el.dataset.f==="area"){ const head=el.closest(".rowitem").querySelector(".rowhead b"); if(head) head.textContent=el.value; } }
   if(el.id==="sitefigcap"){ r.siteFigureCap=el.value; saveDb(); }
-});
+}
+/* Bind to BOTH events: iOS Safari selects and browser autofill fire "change"
+   without "input" — binding only "input" silently drops those edits. */
+document.addEventListener("input", bindData);
+document.addEventListener("change", e=>{ if(e.target && e.target.type!=="file") bindData(e); });
+
 document.addEventListener("change",e=>{
   if(e.target.id==="photofile"){ addPhotos(e.target.files); e.target.value=""; }
   if(e.target.id==="attfile"){

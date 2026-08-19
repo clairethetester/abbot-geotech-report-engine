@@ -1,0 +1,11 @@
+{
+  "name": "abbot-geotech-engine-tests",
+  "private": true,
+  "description": "Dev-only Playwright tests for the report engine. Not part of the deployed app.",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0"
+  }
+}

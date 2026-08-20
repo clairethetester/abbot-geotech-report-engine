@@ -539,3 +539,191 @@ test.describe('F12 — scroll position on navigation', () => {
     expect(Math.abs(after - before), 'a non-navigation re-render must hold position').toBeLessThanOrEqual(2);
   });
 });
+
+/* ------------------------------------------------------------------ *
+ * F13 — row editor controls line up with their fields                 *
+ * ------------------------------------------------------------------ */
+test.describe('F13 — row alignment', () => {
+  test('the soil-layer remove button aligns with the inputs on its row', async ({ page }) => {
+    await newReport(page, 'comprehensive');
+    await gotoTab(page, 'Fieldwork');
+    await page.click('#addbh');
+    await page.click('[data-addlayer="0"]');
+    const r = await page.evaluate(() => {
+      const row = document.querySelector('[data-dellayer="0:0"]').closest('.inline');
+      const btn = row.querySelector('[data-dellayer="0:0"]').getBoundingClientRect();
+      const inp = row.querySelector('input[data-f="desc"]').getBoundingClientRect();
+      return { top: btn.top - inp.top, bottom: btn.bottom - inp.bottom };
+    });
+    expect(Math.abs(r.top), 'remove button must sit level with its row').toBeLessThanOrEqual(1);
+    expect(Math.abs(r.bottom)).toBeLessThanOrEqual(1);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * R — restored work (lost when 345277b overwrote 7048cdc)             *
+ * ------------------------------------------------------------------ */
+test.describe('R — classification split', () => {
+  test('design class is required and defaults are not assumed', async ({ page }) => {
+    await newReport(page, 'comprehensive');
+    const labels = await page.evaluate(() => requirements(report()).map(g => g.label));
+    expect(labels).toContain('Site classification adopted for design');
+  });
+
+  test('overriding the calculated class demands a justification', async ({ page }) => {
+    await newReport(page, 'comprehensive');
+    await gotoTab(page, 'Classification');
+    await page.selectOption('#f_siteClass', 'M');
+    await page.selectOption('#f_designClass', 'M');
+    let labels = await page.evaluate(() => requirements(report()).map(g => g.label));
+    expect(labels, 'same class needs no justification')
+      .not.toContain('Justification for adopting a different class for design');
+
+    await page.selectOption('#f_designClass', 'P');
+    labels = await page.evaluate(() => requirements(report()).map(g => g.label));
+    expect(labels, 'a different design class must be justified')
+      .toContain('Justification for adopting a different class for design');
+
+    await page.fill('#f_classOverrideJust', 'Shallow rock; slab designed to Class S requirements.');
+    labels = await page.evaluate(() => requirements(report()).map(g => g.label));
+    expect(labels).not.toContain('Justification for adopting a different class for design');
+  });
+
+  test('the report prints both classes and the basis for the override', async ({ page }) => {
+    await newReport(page, 'comprehensive');
+    await page.evaluate(() => {
+      Object.assign(report().d, { siteClass: 'M', designClass: 'H1',
+        classOverrideJust: 'Deep reactive clay over fill.' });
+      saveDb(); buildReport();
+    });
+    const html = await page.$eval('#rpt', el => el.innerHTML);
+    expect(html).toContain('Site classification — calculated');
+    expect(html).toContain('Adopted for design');
+    expect(html).toContain('Basis of design classification');
+    expect(html).toContain('Deep reactive clay over fill.');
+  });
+});
+
+test.describe('R — slope stability module', () => {
+  const enable = (page) => page.evaluate(() => {
+    report().d.includeSlope = true; saveDb(); renderEditor({ focus: false });
+  });
+
+  test('the tab appears only when the assessment is opted into', async ({ page }) => {
+    await newReport(page, 'comprehensive');
+    await expect(page.locator('#tabrail button:text-is("Slope stability")')).toHaveCount(0);
+    await enable(page);
+    await expect(page.locator('#tabrail button:text-is("Slope stability")')).toHaveCount(1);
+  });
+
+  test('it is not offered on classification or desktop reports', async ({ page }) => {
+    for (const type of ['desktop', 'classification']) {
+      await newReport(page, type);
+      await expect(page.locator('#f_includeSlope')).toHaveCount(0);
+    }
+  });
+
+  test('the AGS matrix lookup is applied, not invented', async ({ page }) => {
+    await newReport(page, 'comprehensive');
+    // spot-check the published matrix
+    const cases = [['A','1','VH'], ['C','3','M'], ['D','4','VL'], ['F','1','L'], ['E','2','L']];
+    for (const [lk, cs, want] of cases) {
+      expect(await page.evaluate(([l,c]) => agsRisk(l,c), [lk, cs]), `${lk}${cs}`).toBe(want);
+    }
+  });
+
+  test('risk to life multiplies the four factors', async ({ page }) => {
+    await newReport(page, 'comprehensive');
+    await enable(page);
+    await gotoTab(page, 'Slope stability');
+    await page.click('#addrlife');
+    for (const [f, v] of [['ph','0.0001'],['psh','0.5'],['pts','0.8'],['vdt','0.5']]) {
+      await page.fill(`input[data-rlife="0"][data-f="${f}"]`, v);
+    }
+    await page.locator('input[data-rlife="0"][data-f="vdt"]').blur();
+    await page.waitForTimeout(200);
+    const shown = await page.inputValue('#rlifelist .rowitem .inline div:last-child input');
+    expect(shown).toBe('2.00e-5');   // 1e-4 * 0.5 * 0.8 * 0.5
+  });
+
+  test('the module gates issue on its own requirements', async ({ page }) => {
+    await newReport(page, 'comprehensive');
+    await enable(page);
+    const labels = await page.evaluate(() => requirements(report()).map(g => g.label));
+    expect(labels).toContain('At least one slope/landslide hazard identified');
+    expect(labels).toContain('At least one risk-to-life calculation');
+    expect(labels).toContain('Geotechnical report class (per council guideline)');
+    expect(labels).toContain("Engineer's slope stability conclusion");
+  });
+
+  test('with the module off, free-text hazards are required instead', async ({ page }) => {
+    await newReport(page, 'comprehensive');
+    let labels = await page.evaluate(() => requirements(report()).map(g => g.label));
+    expect(labels).toContain('Geotechnical hazards & risk commentary');
+    await enable(page);
+    labels = await page.evaluate(() => requirements(report()).map(g => g.label));
+    expect(labels, 'the structured module replaces the free-text requirement')
+      .not.toContain('Geotechnical hazards & risk commentary');
+  });
+
+  test('the report carries the assessment and the batter guide', async ({ page }) => {
+    await newReport(page, 'comprehensive');
+    await page.evaluate(() => {
+      const d = report().d;
+      d.includeSlope = true;
+      d.slopeEvidence = 'No tension cracks observed.';
+      d.slopeHazards = [{ desc: 'Rotational failure upslope', likelihood: 'D', consequence: '2' }];
+      d.riskLifeRows = [{ desc: 'Person in dwelling', ph: '0.0001', psh: '0.5', pts: '0.8', vdt: '0.5' }];
+      d.slopeConclusion = 'Risk is tolerable subject to the drainage measures below.';
+      d.reportClass = 'B';
+      d.councilGuideline = 'Lake Macquarie City Council Geotechnical Slope Stability Guidelines 2014';
+      saveDb(); buildReport();
+    });
+    const html = await page.$eval('#rpt', el => el.innerHTML);
+    expect(html).toContain('Slope stability &amp; landslide risk assessment');
+    expect(html).toContain('Rotational failure upslope');
+    expect(html).toContain('Unlikely (D)');
+    expect(html).toContain('Risk is tolerable subject to the drainage measures below.');
+    expect(html).toContain('Safe batter slope guide');
+    expect(html).toContain('Lake Macquarie City Council');
+    expect(html).toContain('GeoGuide LR8');
+  });
+
+  test('none of the slope content leaks into a report with the module off', async ({ page }) => {
+    await newReport(page, 'comprehensive');
+    await page.evaluate(() => { report().d.hazards = 'Reactive soil.'; saveDb(); buildReport(); });
+    const html = await page.$eval('#rpt', el => el.innerHTML);
+    expect(html).not.toContain('Slope stability &amp; landslide risk assessment');
+    expect(html).not.toContain('Safe batter slope guide');
+    expect(html).toContain('Geotechnical hazards &amp; risk');
+  });
+});
+
+test.describe('R — derived fields update in place', () => {
+  test('typing four factors quickly loses none of them', async ({ page }) => {
+    await newReport(page, 'comprehensive');
+    await page.evaluate(() => { report().d.includeSlope = true; saveDb(); renderEditor({ focus: false }); });
+    await gotoTab(page, 'Slope stability');
+    await page.click('#addrlife');
+    for (const [f, v] of [['ph','0.0001'],['psh','0.5'],['pts','0.8'],['vdt','0.5']]) {
+      await page.fill(`input[data-rlife="0"][data-f="${f}"]`, v);
+    }
+    const row = await page.evaluate(() => report().d.riskLifeRows[0]);
+    expect(row, 'no factor may be dropped by a re-render').toMatchObject(
+      { ph: '0.0001', psh: '0.5', pts: '0.8', vdt: '0.5' });
+    await expect(page.locator('[data-rlol="0"]')).toHaveValue('2.00e-5');
+  });
+
+  test('the AGS rating updates without rebuilding the row', async ({ page }) => {
+    await newReport(page, 'comprehensive');
+    await page.evaluate(() => { report().d.includeSlope = true; saveDb(); renderEditor({ focus: false }); });
+    await gotoTab(page, 'Slope stability');
+    await page.click('#addslhaz');
+    await page.fill('input[data-slhaz="0"][data-f="desc"]', 'Rockfall from the batter');
+    await page.selectOption('select[data-slhaz="0"][data-f="likelihood"]', 'C');
+    await page.selectOption('select[data-slhaz="0"][data-f="consequence"]', '2');
+    await expect(page.locator('[data-agsrisk="0"]')).toHaveValue('H');
+    expect(await page.evaluate(() => report().d.slopeHazards[0].desc),
+      'the description must survive the rating update').toBe('Rockfall from the batter');
+  });
+});

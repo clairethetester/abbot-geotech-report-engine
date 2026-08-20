@@ -155,6 +155,11 @@ input[data-need]:focus,select[data-need]:focus,textarea[data-need]:focus{backgro
 .rowitem .rowhead b{font-family:var(--display)}
 .inline{display:flex;gap:.6rem;flex-wrap:wrap;align-items:end}
 .inline>div{flex:1;min-width:130px}
+/* In row editors the <label> wraps its own input, so label{margin-bottom}
+   lands BELOW the field and pushes the row's cross-end down — which left the
+   ✕ button sitting 4px lower than the inputs it belongs to. */
+.rowitem .inline label{margin-bottom:0}
+.rowitem .inline>div>button{margin-bottom:0}
 .checks{display:grid;gap:.4rem;grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
 .checks label{display:flex;gap:.55rem;align-items:flex-start;font-weight:400;min-height:var(--tap);padding:.35rem .2rem}
 .checks input{width:22px;height:22px;min-height:22px;margin-top:2px;flex:none}
@@ -379,11 +384,39 @@ const SECTIONS = [
   { id:"lab",    label:"Results",         types:["classification","comprehensive"] },
   { id:"cls",    label:"Classification",  types:["classification","comprehensive"] },
   { id:"wind",   label:"Wind",            types:["classification","comprehensive"] },
+  { id:"slope",  label:"Slope stability", types:["comprehensive"] },
   { id:"recs",   label:"Recommendations", types:["desktop","classification","comprehensive"] },
   { id:"photos", label:"Photos",          types:["desktop","classification","comprehensive"] },
   { id:"review", label:"Review & issue",  types:["desktop","classification","comprehensive"] },
 ];
 const AS2870 = ["A","S","M","M-D","H1","H1-D","H2","H2-D","E","E-D","P"];
+/* AGS (2007) "Practice Note Guidelines for Landslide Risk Management",
+   Appendix C — qualitative risk-to-property matrix. Likelihood A–F against
+   consequence 1–5. The engineer assigns likelihood and consequence; the app
+   only looks the rating up, and the engineer reviews it before print. */
+const AGS_LIKELIHOOD = [
+  {code:"A", label:"Almost certain"}, {code:"B", label:"Likely"}, {code:"C", label:"Possible"},
+  {code:"D", label:"Unlikely"}, {code:"E", label:"Rare"}, {code:"F", label:"Barely credible"}];
+const AGS_CONSEQUENCE = [
+  {code:"1", label:"Catastrophic"}, {code:"2", label:"Major"}, {code:"3", label:"Medium"},
+  {code:"4", label:"Minor"}, {code:"5", label:"Insignificant"}];
+const AGS_MATRIX = {
+  A:{1:"VH",2:"VH",3:"VH",4:"H",5:"M or L"}, B:{1:"VH",2:"VH",3:"H",4:"M",5:"L"},
+  C:{1:"VH",2:"H",3:"M",4:"L",5:"VL"},       D:{1:"H",2:"M",3:"L",4:"VL",5:"VL"},
+  E:{1:"M",2:"L",3:"VL",4:"VL",5:"VL"},      F:{1:"L",2:"VL",3:"VL",4:"VL",5:"VL"}
+};
+const AGS_TOLERABLE = { existing:"1×10⁻⁴ per annum (existing slope / existing development)",
+  "new":"1×10⁻⁵ per annum (new constructed slope / new development)" };
+/* AS 3798 / typical NSW practice — safe batter slope guide by material. */
+const BATTER_TABLE = [
+  {mat:"Fill", st:"1.5:1", lt:"2:1"}, {mat:"Firm / stiff clay", st:"1.5:1", lt:"2:1"},
+  {mat:"Very stiff / hard clay", st:"1:1", lt:"2:1"}, {mat:"Rock (subject to inspection)", st:"0.5:1", lt:"1:1"}];
+function agsRisk(lk, cs){ return (AGS_MATRIX[lk]&&AGS_MATRIX[lk][cs]) || "—"; }
+function rlol(x){
+  const v = ["ph","psh","pts","vdt"].map(k=>parseFloat(x&&x[k])||0);
+  const r = v[0]*v[1]*v[2]*v[3];
+  return r ? r.toExponential(2) : "—";
+}
 const WINDCLASSES = ["N1","N2","N3","N4","N5","N6","C1","C2","C3","C4"];
 const HOLDPOINTS = [
   "Footing / foundation material inspection before steel and concrete",
@@ -444,9 +477,14 @@ function blank(type){
       geologyMap:"", geologyUnit:"", history:"", neighbours:"",
       fieldDate:"", operator:"", weather:"", equipment:"", groundwater:"Not encountered",
       labName:"", labDate:"",
-      siteClass:"", classJust:"", bearing:"", ys:"",
+      siteClass:"", classJust:"", bearing:"", ys:"", designClass:"", classOverrideJust:"",
       windRegion:"A", terrain:"", topo:"", shielding:"", windClass:"", windNote:false,
       footings:[], founding:"", excavation:"", retaining:"", fills:"", drainageRec:"", hazards:"", extraRecs:"",
+      includeSlope:false, slopeEvidence:"", slopeHazards:[], riskLifeRows:[], slopeSituation:"new", slopeConclusion:"",
+      rwBulkUnitWeight:"", rwKa:"", rwK0:"", rwKp:"", rwFosSliding:"1.5", rwFosOverturning:"1.5",
+      rwFosBearing:"2.0", rwFosOverall:"1.5",
+      reportClass:"", geoZone:"", councilGuideline:"",
+      siInspection:false, siSubsurface:false, siBedrock:false, siMonitoring:false,
       holds:[...HOLDPOINTS.slice(0,2)], limitations:LIMITATIONS_DEFAULT,
       authorSig:"", reviewerSig:"",
       incLegend:true, incClassDefs:true, incGeneral:true, appGeneral:GENERAL_NOTES_DEFAULT,
@@ -527,13 +565,22 @@ function requirements(r){
     need(d.fieldDate,"Fieldwork date","field");
     need(r.boreholes.length>0,"At least one borehole / test location","field");
     need(r.boreholes.every(b=>b.depth && b.method),"Method and depth for every borehole","field");
-    need(d.siteClass,"AS 2870 site classification","cls");
+    need(d.siteClass,"AS 2870 site classification (as calculated)","cls");
     need(d.classJust,"Classification justification","cls");
+    need(d.designClass,"Site classification adopted for design","cls");
+    need(d.designClass===d.siteClass || d.classOverrideJust,
+      "Justification for adopting a different class for design","cls");
     need(d.windClass,"AS 4055 wind classification","wind");
     need(!d.awaitingResults,"External test results marked as still pending","lab");
   }
+  if(r.type==="comprehensive" && d.includeSlope){
+    need((d.slopeHazards||[]).length>0,"At least one slope/landslide hazard identified","slope");
+    need((d.riskLifeRows||[]).length>0,"At least one risk-to-life calculation","slope");
+    need(d.reportClass,"Geotechnical report class (per council guideline)","slope");
+    need(d.slopeConclusion,"Engineer's slope stability conclusion","slope");
+  }
   if(r.type!=="desktop") need((d.footings.length>0)||d.founding,"Footing recommendation","recs");
-  if(r.type==="comprehensive") need(d.hazards,"Geotechnical hazards & risk commentary","recs");
+  if(r.type==="comprehensive" && !d.includeSlope) need(d.hazards,"Geotechnical hazards & risk commentary","recs");
   need(d.limitations,"Limitations statement","review");
   return q;
 }
@@ -547,7 +594,9 @@ const SECFIELDS = {
   site:["access","existing","vegetation","slopeDeg","aspect","drainage","neighbours","geologyMap","geologyUnit","history"],
   field:["fieldDate","operator","weather","equipment"],
   lab:["labName","labDate"],
-  cls:["siteClass","ys","classJust","bearing"],
+  cls:["siteClass","ys","classJust","bearing","designClass","classOverrideJust"],
+  slope:["slopeEvidence","slopeConclusion","reportClass","geoZone","councilGuideline",
+         "rwBulkUnitWeight","rwKa","rwK0","rwKp"],
   wind:["terrain","topo","shielding","windClass"],
   recs:["founding","excavation","retaining","fills","drainageRec","hazards","extraRecs"],
   photos:[], review:[]
@@ -560,6 +609,8 @@ function sectionTouched(r, secId){
                               (SECFIELDS.site).some(k=>String(r.d[k]||"").trim()!=="");
   if(secId==="recs")   return r.d.footings.length>0 || (r.d.recRows||[]).length>0 ||
                               (SECFIELDS.recs).some(k=>String(r.d[k]||"").trim()!=="");
+  if(secId==="slope")  return (r.d.slopeHazards||[]).length>0 || (r.d.riskLifeRows||[]).length>0 ||
+                              (SECFIELDS.slope).some(k=>String(r.d[k]||"").trim()!=="");
   if(secId==="review") return !!r.d.authorSig || !!r.d.reviewerSig || (r.d.dist||[]).length>0;
   return (SECFIELDS[secId]||[]).some(k=>String(r.d[k]||"").trim()!=="");
 }
@@ -602,7 +653,10 @@ function renderHome(){
 }
 
 /* ---------- editor scaffolding ---------- */
-function visibleSections(){ return SECTIONS.filter(s=>s.types.includes(report().type)); }
+/* The slope tab only exists when the engineer has opted into the AGS 2007
+   assessment on the Site description tab. */
+function visibleSections(){ return SECTIONS.filter(s=>s.types.includes(report().type)
+  && (s.id!=="slope" || report().d.includeSlope)); }
 function renderTabs(opts){
   const scroll = !opts || opts.scroll !== false;
   const secs = visibleSections();
@@ -658,7 +712,10 @@ function F(key,label,opts={}){
   if(t==="textarea") return `<div class="${cls}"><label for="f_${key}">${label}${req}</label>
     <textarea id="f_${key}" data-k="${key}"${ac}${ph}>${esc(d[key])}</textarea>${opts.hint?`<p class="hint">${opts.hint}</p>`:""}</div>`;
   if(t==="select") return `<div class="${cls}"><label for="f_${key}">${label}${req}</label>
-    <select id="f_${key}" data-k="${key}">${opts.options.map(o=>`<option value="${esc(o)}"${d[key]===o?" selected":""}>${esc(o||"— select —")}</option>`).join("")}</select>${opts.hint?`<p class="hint">${opts.hint}</p>`:""}</div>`;
+    <select id="f_${key}" data-k="${key}">${opts.options.map(o=>{
+      const v = (o && typeof o==="object") ? o.v : o, l = (o && typeof o==="object") ? o.l : o;
+      return `<option value="${esc(v)}"${d[key]===v?" selected":""}>${esc(l||"— select —")}</option>`;
+    }).join("")}</select>${opts.hint?`<p class="hint">${opts.hint}</p>`:""}</div>`;
   return `<div class="${cls}"><label for="f_${key}">${label}${req}</label>
     <input id="f_${key}" data-k="${key}" type="${t}" value="${esc(d[key])}"${ac}${im}${ph}>${opts.hint?`<p class="hint">${opts.hint}</p>`:""}</div>`;
 }
@@ -726,6 +783,10 @@ site(r){ return `
   ${F("drainage","Surface drainage & seepage observed",{type:"textarea",wide:1})}
   ${F("neighbours","Neighbouring environment",{type:"textarea",wide:1})}
  </div>
+ ${r.type==="comprehensive"?`<div class="checks" style="margin-top:.8rem">
+  <label><input type="checkbox" id="f_includeSlope"${r.d.includeSlope?" checked":""}>
+   <span><b>Include slope stability &amp; landslide risk (AGS 2007)</b> — adds a Slope stability tab.</span></label>
+ </div>`:""}
 </fieldset>
 <fieldset><legend>Geology & site history</legend>
  <div class="grid">
@@ -798,11 +859,64 @@ lab(r){ return `
 cls(r){ return `
 <fieldset><legend>AS 2870 site classification</legend>
  <div class="grid">
-  ${F("siteClass","Site classification",{type:"select",req:1,options:["",...AS2870]})}
+  ${F("siteClass","Site classification — as calculated",{type:"select",req:1,options:["",...AS2870]})}
   ${F("ys","Characteristic surface movement ys (mm)",{im:"decimal",narrow:1,ph:"35"})}
   ${F("classJust","Basis of classification",{type:"textarea",req:1,wide:1,ph:"Subsurface profile, lab results, visual assessment, trees, fill"})}
   ${F("bearing","Allowable bearing pressures",{type:"textarea",wide:1,ph:"100 kPa at 1.1 m (BH1); 150 kPa at 1.4 m (BH2)"})}
  </div>
+</fieldset>
+<fieldset><legend>Classification adopted for design</legend>
+ <div class="grid">
+  ${F("designClass","Site classification — adopted for design",{type:"select",req:1,options:["",...AS2870],hint:"Defaults to the calculated class unless you override it."})}
+  ${F("classOverrideJust","Reason for a different design class",{type:"textarea",wide:1,ph:"Class P due to shallow rock; slab designed to Class S requirements"})}
+ </div>
+</fieldset>`; },
+
+slope(r){ return `
+<fieldset><legend>Evidence of instability</legend>
+ <div class="grid">${F("slopeEvidence","Visual evidence of slope instability",{type:"textarea",wide:1,ph:"Cracking, tilted trees or structures, seepage, prior slips — or that none was observed"})}</div>
+</fieldset>
+<fieldset><legend>Hazards &amp; risk to property (AGS 2007)</legend>
+ <p class="hint" style="margin-top:0">One row per plausible hazard; the rating is looked up, not judged.</p>
+ <div id="slhazlist" class="rowlist"></div>
+ <button type="button" id="addslhaz">+ Add hazard</button>
+</fieldset>
+<fieldset><legend>Risk to life (AGS 2007)</legend>
+ <p class="hint" style="margin-top:0">R(LoL) = P(H) × P(S:H) × P(T:S) × V(D:T), one row per scenario.</p>
+ <div class="grid">
+  ${F("slopeSituation","Situation",{type:"select",wide:1,hint:"Sets the tolerable risk: new 10⁻⁵, existing 10⁻⁴ per annum.",
+    options:[{v:"new",l:"New constructed slope / new development"},{v:"existing",l:"Existing slope / existing development"}]})}
+ </div>
+ <div id="rlifelist" class="rowlist"></div>
+ <button type="button" id="addrlife">+ Add risk-to-life scenario</button>
+ <div class="grid" style="margin-top:.7rem">${F("slopeConclusion","Engineer's conclusion on slope stability",{type:"textarea",req:1,wide:1,ph:"Whether the assessed risk is tolerable for this development, and on what conditions"})}</div>
+</fieldset>
+<fieldset><legend>Retaining wall design parameters</legend>
+ <div class="grid">
+  ${F("rwBulkUnitWeight","Bulk unit weight (kN/m³)",{im:"decimal",narrow:1,ph:"18"})}
+  ${F("rwKa","Active earth pressure coefficient Ka",{im:"decimal",narrow:1,ph:"0.33"})}
+  ${F("rwK0","At-rest earth pressure coefficient K0",{im:"decimal",narrow:1,ph:"0.5"})}
+  ${F("rwKp","Passive earth pressure coefficient Kp",{im:"decimal",narrow:1,ph:"3.0"})}
+  ${F("rwFosSliding","FOS — sliding",{im:"decimal",narrow:1})}
+  ${F("rwFosOverturning","FOS — overturning",{im:"decimal",narrow:1})}
+  ${F("rwFosBearing","FOS — bearing capacity",{im:"decimal",narrow:1})}
+  ${F("rwFosOverall","FOS — overall stability",{im:"decimal",narrow:1})}
+ </div>
+</fieldset>
+<fieldset><legend>Council geotechnical checklist &amp; declaration</legend>
+ <div class="grid">
+  ${F("reportClass","Report class",{type:"select",req:1,narrow:1,options:["","A","B","C","D1","D2"],hint:"Per the council's geotechnical guideline."})}
+  ${F("geoZone","Geotechnical zone(s)",{ph:"Geo 3 and Geo 5 (including buffer)"})}
+  ${F("councilGuideline","Council guideline reference",{wide:1,ph:"Lake Macquarie City Council Geotechnical Slope Stability Guidelines 2014"})}
+ </div>
+ <p class="hint" style="margin:.8rem 0 .3rem"><b>Site investigation checklist</b></p>
+ <div class="checks">
+  <label><input type="checkbox" data-bool="siInspection"${r.d.siInspection?" checked":""}> Site inspection undertaken</label>
+  <label><input type="checkbox" data-bool="siSubsurface"${r.d.siSubsurface?" checked":""}> Subsurface investigation undertaken</label>
+  <label><input type="checkbox" data-bool="siBedrock"${r.d.siBedrock?" checked":""}> Subsurface investigation of bedrock undertaken</label>
+  <label><input type="checkbox" data-bool="siMonitoring"${r.d.siMonitoring?" checked":""}> Subsurface monitoring installed</label>
+ </div>
+ <p class="hint">The declaration is generated from your sign-off on Review &amp; issue.</p>
 </fieldset>`; },
 
 wind(r){ return `
@@ -835,7 +949,11 @@ ${r.type!=="desktop"?`<fieldset><legend>Foundations</legend>
  <button type="button" id="addrec">+ Add recommendation</button>
 </fieldset>
 ${r.type==="comprehensive"?`<fieldset><legend>Hazards & risk</legend>
- <div class="grid">${F("hazards","Geotechnical hazards & risk analysis",{type:"textarea",wide:1,req:1,ph:"Hazards, likelihood and consequence (AGS 2007 where landslide risk applies)"})}</div>
+ ${r.d.includeSlope?`<div class="hint" style="border:1px solid var(--line);border-radius:8px;padding:.7rem .9rem;margin-bottom:.8rem;background:#fbfaf7">
+   <b>Slope stability conclusion</b> — edit it on the Slope stability tab.
+   <p style="margin:.4rem 0 0">${esc(r.d.slopeConclusion)||"Not yet entered."}</p></div>
+  <div class="grid">${F("hazards","Other geotechnical hazards & risk",{type:"textarea",wide:1,ph:"Hazards not covered by the slope assessment — reactive soil, uncontrolled fill, corrosivity"})}</div>`
+  :`<div class="grid">${F("hazards","Geotechnical hazards & risk analysis",{type:"textarea",wide:1,req:1,ph:"Hazards, likelihood and consequence (AGS 2007 where landslide risk applies)"})}</div>`}
 </fieldset>`:""}
 <fieldset><legend>Inspections & hold points</legend>
   <div class="checks">${HOLDPOINTS.map(h=>`<label><input type="checkbox" data-arr="holds" value="${esc(h)}"${r.d.holds.includes(h)?" checked":""}> ${esc(h)}</label>`).join("")}</div>
@@ -938,6 +1056,36 @@ function renderDcps(){
      <div class="inline">
       <div><label>Refusal depth (m)<input data-dcp="${i}" data-f="depth" inputmode="decimal" value="${esc(d.depth)}"></label></div>
       <div style="flex:2"><label>Result note<input data-dcp="${i}" data-f="note" value="${esc(d.note)}" placeholder="Bouncing on bedrock; brown sand on dry tip"></label></div>
+     </div>`;
+    el.appendChild(div);
+  });
+}
+function renderSlopeHazards(){
+  const el=$("slhazlist"); if(!el) return; el.innerHTML="";
+  (report().d.slopeHazards||[]).forEach((h,i)=>{
+    const div=document.createElement("div"); div.className="rowitem";
+    div.innerHTML=`<div class="rowhead"><b>Hazard ${i+1}${h.desc?": "+esc(h.desc):""}</b><button type="button" class="danger" data-delslhaz="${i}">Remove</button></div>
+     <div class="inline">
+      <div style="flex:2"><label>Hazard<input data-slhaz="${i}" data-f="desc" value="${esc(h.desc)}" placeholder="Rotational failure of soils upslope"></label></div>
+      <div><label>Likelihood<select data-slhaz="${i}" data-f="likelihood">${["",...AGS_LIKELIHOOD.map(x=>x.code)].map(c=>`<option value="${c}"${h.likelihood===c?" selected":""}>${c?AGS_LIKELIHOOD.find(x=>x.code===c).label:"— select —"}</option>`).join("")}</select></label></div>
+      <div><label>Consequence<select data-slhaz="${i}" data-f="consequence">${["",...AGS_CONSEQUENCE.map(x=>x.code)].map(c=>`<option value="${c}"${h.consequence===c?" selected":""}>${c?AGS_CONSEQUENCE.find(x=>x.code===c).label:"— select —"}</option>`).join("")}</select></label></div>
+      <div><label>Risk rating<input data-agsrisk="${i}" value="${agsRisk(h.likelihood,h.consequence)}" disabled></label></div>
+     </div>`;
+    el.appendChild(div);
+  });
+}
+function renderRiskLife(){
+  const el=$("rlifelist"); if(!el) return; el.innerHTML="";
+  (report().d.riskLifeRows||[]).forEach((x,i)=>{
+    const div=document.createElement("div"); div.className="rowitem";
+    div.innerHTML=`<div class="rowhead"><b>Scenario ${i+1}${x.desc?": "+esc(x.desc):""}</b><button type="button" class="danger" data-delrlife="${i}">Remove</button></div>
+     <div class="inline">
+      <div style="flex:2"><label>Scenario<input data-rlife="${i}" data-f="desc" value="${esc(x.desc)}" placeholder="Person inside the proposed dwelling"></label></div>
+      <div><label>P(H)<input data-rlife="${i}" data-f="ph" inputmode="decimal" value="${esc(x.ph)}" placeholder="0.0001"></label></div>
+      <div><label>P(S:H)<input data-rlife="${i}" data-f="psh" inputmode="decimal" value="${esc(x.psh)}"></label></div>
+      <div><label>P(T:S)<input data-rlife="${i}" data-f="pts" inputmode="decimal" value="${esc(x.pts)}"></label></div>
+      <div><label>V(D:T)<input data-rlife="${i}" data-f="vdt" inputmode="decimal" value="${esc(x.vdt)}"></label></div>
+      <div><label>R(LoL)<input data-rlol="${i}" value="${rlol(x)}" disabled></label></div>
      </div>`;
     el.appendChild(div);
   });
@@ -1061,7 +1209,8 @@ function renderEditor(opts){
   renderTabs();
   const sec = visibleSections()[sectionIdx];
   $("form").innerHTML = TPL[sec.id](report());
-  renderBoreholes(); renderDcps(); renderSamples(); renderPhotos(); renderPlans(); renderDist(); renderRecRows(); renderSiteFig(); renderAttachments(); initSigPads(); renderReviewGaps();
+  renderBoreholes(); renderDcps(); renderSamples(); renderPhotos(); renderPlans(); renderDist(); renderRecRows();
+  renderSlopeHazards(); renderRiskLife(); renderSiteFig(); renderAttachments(); initSigPads(); renderReviewGaps();
   const first = $("form").querySelector("input,select,textarea,button");
   if(isNav) window.scrollTo({top:0, left:0, behavior:"auto"});
   if(focusFirst && first && matchMedia("(min-width:700px)").matches) first.focus({preventScroll:true});
@@ -1135,10 +1284,14 @@ function buildReport(){
        ${r.samples.map((s,i)=>`<tr><td>S${i+1}</td><td>${esc(s.bh)}</td><td>${esc(s.depth)}</td><td>${esc(s.desc)}</td><td>${esc(s.ll)}</td><td>${esc(s.ls)}</td></tr>`).join("")}</table>`:""}`);
 
     addSec("Site classification (AS 2870)", sub=>`
-      <div class="classbox"><div>Site classification<br><b>Class ${esc(d.siteClass)||"—"}</b></div>
+      <div class="classbox"><div>Site classification — calculated<br><b>Class ${esc(d.siteClass)||"—"}</b></div>
+       ${d.designClass && d.designClass!==d.siteClass?`<div>Adopted for design<br><b>Class ${esc(d.designClass)}</b></div>`:""}
        ${d.ys?`<div>Characteristic surface movement<br><b>y<sub>s</sub> ≈ ${esc(d.ys)} mm</b></div>`:""}</div>
       ${sub("Basis of classification")}
       <p>${nl(d.classJust)}</p>
+      ${(d.designClass && d.designClass!==d.siteClass)?sub("Basis of design classification")+
+        `<p>Notwithstanding the calculated Class ${esc(d.siteClass)}, footings and slabs for this development should be
+         designed to <b>Class ${esc(d.designClass)}</b> requirements of AS 2870–2011. ${nl(d.classOverrideJust)}</p>`:""}
       ${d.bearing?sub("Allowable bearing pressures")+`<p>${nl(d.bearing)}</p>`:""}`);
 
     addSec("Wind classification (AS 4055)", sub=>`
@@ -1149,6 +1302,58 @@ function buildReport(){
        this assessment on request.</p>`:""}`);
   }
 
+  if(r.type==="comprehensive" && d.includeSlope){
+    addSec("Slope stability & landslide risk assessment", sub=>{
+      const hazRows=(d.slopeHazards||[]).map(h=>`<tr><td>${esc(h.desc)||"—"}</td>
+        <td>${h.likelihood?AGS_LIKELIHOOD.find(x=>x.code===h.likelihood).label+" ("+h.likelihood+")":"—"}</td>
+        <td>${h.consequence?AGS_CONSEQUENCE.find(x=>x.code===h.consequence).label+" ("+h.consequence+")":"—"}</td>
+        <td><b>${agsRisk(h.likelihood,h.consequence)}</b></td></tr>`).join("");
+      const rlifeRows=(d.riskLifeRows||[]).map(x=>
+        `<tr><td>${esc(x.desc)||"—"}</td><td>${esc(x.ph)}</td><td>${esc(x.psh)}</td><td>${esc(x.pts)}</td>
+          <td>${esc(x.vdt)}</td><td><b>${rlol(x)}</b></td></tr>`).join("");
+      return `
+      <p>This assessment has been prepared with reference to the Australian Geomechanics Society (2007)
+       <i>Practice Note Guidelines for Landslide Risk Management</i>${d.councilGuideline?`, and ${esc(d.councilGuideline)}`:""}.</p>
+      ${sub("Evidence of instability")}
+      <p>${nl(d.slopeEvidence)||"No visual evidence of slope instability was observed at the time of investigation."}</p>
+      ${hazRows?sub("Risk to property")+`
+       <p>Qualitative risk to property has been assessed against the AGS (2007) likelihood and consequence
+        framework:</p>
+       <table><tr><th>Hazard</th><th>Likelihood</th><th>Consequence</th><th>Risk rating</th></tr>${hazRows}</table>`:""}
+      ${rlifeRows?sub("Risk to life")+`
+       <p>R(LoL) = P(H) × P(S:H) × P(T:S) × V(D:T). Suggested tolerable risk for the person most at risk on
+        ${d.slopeSituation==="existing"?"an existing slope / existing development":"a new constructed slope / new development"}:
+        <b>${esc(AGS_TOLERABLE[d.slopeSituation]||AGS_TOLERABLE["new"])}</b>.</p>
+       <table><tr><th>Scenario</th><th>P(H)</th><th>P(S:H)</th><th>P(T:S)</th><th>V(D:T)</th><th>R(LoL)</th></tr>${rlifeRows}</table>`:""}
+      ${sub("Conclusion")}
+      <p>${nl(d.slopeConclusion)}</p>
+      ${(d.rwFosSliding||d.rwKa||d.rwK0||d.rwKp)?sub("Retaining wall design parameters")+`
+       <p>Retaining walls should be designed to meet or exceed the following minimum factors of safety for each failure
+        mode: sliding ${esc(d.rwFosSliding)||"1.5"}, overturning ${esc(d.rwFosOverturning)||"1.5"},
+        bearing capacity ${esc(d.rwFosBearing)||"2.0"}, overall stability ${esc(d.rwFosOverall)||"1.5"}.</p>
+       <table><tr><th>Parameter</th><th>Value</th></tr>
+        ${d.rwBulkUnitWeight?`<tr><td>Bulk unit weight</td><td>${esc(d.rwBulkUnitWeight)} kN/m³</td></tr>`:""}
+        ${d.rwKa?`<tr><td>Active earth pressure coefficient K<sub>a</sub></td><td>${esc(d.rwKa)}</td></tr>`:""}
+        ${d.rwK0?`<tr><td>At-rest earth pressure coefficient K<sub>0</sub></td><td>${esc(d.rwK0)}</td></tr>`:""}
+        ${d.rwKp?`<tr><td>Passive earth pressure coefficient K<sub>p</sub></td><td>${esc(d.rwKp)}</td></tr>`:""}
+       </table>
+       <p>Parameters assume full drainage behind the wall; without drainage the wall should be designed for hydrostatic
+        pressure over its full height.</p>`:""}
+      ${sub("Geotechnical checklist & declaration")}
+      <table><tr><th>Item</th><th style="width:20%">Status</th></tr>
+       <tr><td>Report class</td><td>${esc(d.reportClass)||"—"}</td></tr>
+       <tr><td>Geotechnical zone(s)</td><td>${esc(d.geoZone)||"—"}</td></tr>
+       <tr><td>Guideline referenced</td><td>${esc(d.councilGuideline)||"—"}</td></tr>
+       <tr><td>Site inspection undertaken</td><td>${d.siInspection?"Yes":"No"}</td></tr>
+       <tr><td>Subsurface investigation undertaken</td><td>${d.siSubsurface?"Yes":"No"}</td></tr>
+       <tr><td>Subsurface investigation of bedrock undertaken</td><td>${d.siBedrock?"Yes":"No"}</td></tr>
+       <tr><td>Subsurface monitoring installed</td><td>${d.siMonitoring?"Yes":"No"}</td></tr></table>
+      <p>I am a geotechnical engineer or engineering geologist as required by ${esc(d.councilGuideline)||"the relevant council guideline"},
+       and on behalf of ${esc(FIRM.entity)} declare that this report was prepared in accordance with the AGS Guidelines
+       (2007) as amended${d.councilGuideline?` and ${esc(d.councilGuideline)}`:""}. See Report certification for signature.</p>`;
+    });
+  }
+
   addSec("Recommendations", sub=>`
     ${d.footings.length?sub("Suitable footing systems")+`
      <p>The site is considered suitable for the following footing systems, subject to the requirements below:</p>
@@ -1157,7 +1362,7 @@ function buildReport(){
     ${(d.recRows&&d.recRows.length)?sub("Geotechnical recommendations")+`
      <table><tr><th style="width:26%">Recommendation</th><th>Description</th></tr>
      ${d.recRows.map(x=>`<tr><td><b>${esc(x.area)}</b></td><td>${mdlite(x.desc)}</td></tr>`).join("")}</table>`:""}
-    ${d.hazards?sub("Geotechnical hazards & risk")+`<p>${nl(d.hazards)}</p>`:""}
+    ${d.hazards?sub(d.includeSlope?"Other geotechnical hazards & risk":"Geotechnical hazards & risk")+`<p>${nl(d.hazards)}</p>`:""}
     ${d.holds.length?sub("Inspections & hold points")+`
      <p>The following inspections by Abbot Design are required for this report to remain valid through construction and
       to support final certification:</p><ul>${d.holds.map(h=>`<li>${esc(h)}</li>`).join("")}</ul>`:""}`);
@@ -1183,7 +1388,8 @@ function buildReport(){
     if(d.windNote) refs.push("Standards Australia/Standards New Zealand 2021, Structural Design Actions Part 2: Wind Actions, AS/NZS 1170.2:2021.");
     if(r.type==="comprehensive"||d.hazards) refs.push("Australian Geomechanics Society 2007, Practice Note Guidelines for Landslide Risk Management, Australian Geomechanics, vol. 42 no. 1.");
     if(r.type!=="desktop") refs.push("CSIRO Publishing 2012, Foundation Maintenance and Footing Performance: A Homeowner's Guide, Building Technology File BTF-18.");
-    if(d.hazards) refs.push("Australian Geomechanics Society 2007, Australian GeoGuide LR8 — Hillside Construction Practice.");
+    if(d.hazards||d.includeSlope) refs.push("Australian Geomechanics Society 2007, Australian GeoGuide LR8 — Hillside Construction Practice.");
+    if(d.includeSlope && d.councilGuideline) refs.push(`${esc(d.councilGuideline)}.`);
     if(d.geologyMap) refs.push(`Geological mapping: ${esc(d.geologyMap)}.`);
     if(d.drawingsBy) refs.push(`Architectural documentation: ${esc(d.drawingsBy)}${d.drawingNos?`, drawings ${esc(d.drawingNos)}`:""}${d.drawingsDate?`, dated ${dt(d.drawingsDate)}`:""}.`);
     return `<ul>${refs.map(x=>`<li>${x}</li>`).join("")}</ul>`;
@@ -1256,6 +1462,12 @@ function buildReport(){
     let info="";
     if(r.type!=="desktop" && d.incLegend) info += `<h3>Borehole log legend</h3>`+LEGEND_HTML;
     if(r.type!=="desktop" && d.incClassDefs) info += `<h3>AS 2870 site classification definitions</h3>`+CLASSDEFS_HTML;
+    if(r.type==="comprehensive" && d.includeSlope){
+      info += `<h3>Safe batter slope guide</h3>
+       <table><tr><th>Material</th><th>Short term (H:V)</th><th>Long term (H:V)</th></tr>
+        ${BATTER_TABLE.map(b=>`<tr><td>${b.mat}</td><td>${b.st}</td><td>${b.lt}</td></tr>`).join("")}</table>
+       <p>Rock batters are subject to inspection by a geotechnical engineer for joints and bedding planes.</p>`;
+    }
     if(d.incGeneral && d.appGeneral) info += `<h3>General notes</h3><p>${nl(d.appGeneral)}</p>`;
     info += FURTHER_HTML;
     apps.push({letter:"D", t:"Information sheets", html:info});
@@ -1489,6 +1701,14 @@ document.addEventListener("click",e=>{
   if(t.id==="adddist"){ (report().d.dist||(report().d.dist=[])).push({to:"",format:"PDF",date:report().d.dateIssued||""}); saveDb(); renderDist(); }
   if(t.dataset.deldist!==undefined){ const i=+t.dataset.deldist, gone=report().d.dist.splice(i,1)[0];
     saveDb(); renderDist(); noteUndo("Recipient removed.", ()=>report().d.dist.splice(i,0,gone)); }
+  if(t.id==="addslhaz"){ (report().d.slopeHazards||(report().d.slopeHazards=[])).push({desc:"",likelihood:"",consequence:""}); saveDb(); renderSlopeHazards(); renderTabs({scroll:false}); }
+  if(t.dataset.delslhaz!==undefined){ const i=+t.dataset.delslhaz, gone=report().d.slopeHazards.splice(i,1)[0];
+    saveDb(); renderSlopeHazards(); renderTabs({scroll:false});
+    noteUndo(`Hazard ${i+1} removed.`, ()=>report().d.slopeHazards.splice(i,0,gone)); }
+  if(t.id==="addrlife"){ (report().d.riskLifeRows||(report().d.riskLifeRows=[])).push({desc:"",ph:"",psh:"",pts:"",vdt:""}); saveDb(); renderRiskLife(); renderTabs({scroll:false}); }
+  if(t.dataset.delrlife!==undefined){ const i=+t.dataset.delrlife, gone=report().d.riskLifeRows.splice(i,1)[0];
+    saveDb(); renderRiskLife(); renderTabs({scroll:false});
+    noteUndo(`Scenario ${i+1} removed.`, ()=>report().d.riskLifeRows.splice(i,0,gone)); }
   if(t.id==="addrec"){ (report().d.recRows||(report().d.recRows=[])).push({area:REC_AREAS[0],desc:""}); saveDb(); renderRecRows(); }
   if(t.dataset.delrec!==undefined){ const i=+t.dataset.delrec, gone=report().d.recRows.splice(i,1)[0];
     saveDb(); renderRecRows(); renderTabs();
@@ -1548,6 +1768,20 @@ function onFieldEdit(e){
   if(el.dataset.dist!==undefined){ r.d.dist[+el.dataset.dist][el.dataset.f]=el.value; saveDb(); }
   if(el.dataset.rec!==undefined){ r.d.recRows[+el.dataset.rec][el.dataset.f]=el.value; saveDb();
     if(el.dataset.f==="area"){ const head=el.closest(".rowitem").querySelector(".rowhead b"); if(head) head.textContent=el.value; } }
+  if(el.dataset.slhaz!==undefined){ const i=+el.dataset.slhaz, h=r.d.slopeHazards[i];
+    h[el.dataset.f]=el.value; saveDb();
+    const cell=document.querySelector(`[data-agsrisk="${i}"]`);
+    if(cell) cell.value = agsRisk(h.likelihood,h.consequence);
+    if(el.dataset.f==="desc"){ const head=el.closest(".rowitem").querySelector(".rowhead b");
+      if(head) head.textContent = `Hazard ${i+1}${el.value?": "+el.value:""}`; } }
+  if(el.dataset.rlife!==undefined){ const i=+el.dataset.rlife, x=r.d.riskLifeRows[i];
+    x[el.dataset.f]=el.value; saveDb();
+    const cell=document.querySelector(`[data-rlol="${i}"]`);
+    if(cell) cell.value = rlol(x);
+    if(el.dataset.f==="desc"){ const head=el.closest(".rowitem").querySelector(".rowhead b");
+      if(head) head.textContent = `Scenario ${i+1}${el.value?": "+el.value:""}`; } }
+  if(el.id==="f_includeSlope"){ r.d.includeSlope=el.checked;
+    sectionIdx=Math.min(sectionIdx, visibleSections().length-1); saveDb(); renderEditor({focus:false}); return; }
   if(el.id==="sitefigcap"){ r.siteFigureCap=el.value; saveDb(); }
   refreshTabsSoon();
 }

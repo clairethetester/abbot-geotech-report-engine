@@ -6,6 +6,17 @@ report-type gating (e.g. Desktop Assessments shouldn't get footing
 advice or cite standards they never applied), the borehole/groundwater
 fields, and the generated report HTML — not just that the page loads.
 
+Two spec files:
+
+- `engine.spec.js` — report-type gating, field behaviour, generated
+  report HTML, backward compatibility with older saved reports.
+- `ux-round.spec.js` — the UI/UX round of August 2026. Locks in the
+  service-worker shell (every cached URL must resolve, or `addAll()`
+  rejects and the app has no offline cache at all), the hint-copy
+  policy, the completeness indicator, the undo behaviour on row
+  deletes, and the sticky chrome. If you change the copy, expect the
+  hint-policy tests to be the ones that complain.
+
 ## Does this affect the live app?
 
 No. Nothing in `index.html` or `sw.js` references this folder. A

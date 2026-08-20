@@ -25,9 +25,11 @@ No framework, no build step, no paid services. One HTML file, a manifest and a s
 - **Dynamic field records**: boreholes with layered soil profiles, DCP tests, lab samples (LL/LS).
 - **Photo capture** from the device camera, compressed on-device (~1400 px JPEG) into the report
   appendix with captions.
-- **Completeness engine**: required content per report type; the strata progress bar shows section
-  state; PDF is available at any time but carries a **DRAFT — NOT FOR CONSTRUCTION** watermark
-  until every requirement is met and the report is formally issued with a named reviewer.
+- **Completeness engine**: required content per report type. The section tabs are the progress
+  indicator — green when a section is complete, orange-dashed when started, plain when untouched —
+  and a section only counts as complete once something has actually been entered in it. PDF is
+  available at any time but carries a **DRAFT — NOT FOR CONSTRUCTION** watermark until every
+  requirement is met and the report is formally issued with a named reviewer.
 - **PDF via the browser print engine** (File → Print → Save as PDF) — works on iOS, Android,
   Windows, macOS and Linux with no dependencies; A4 print stylesheet included.
 - **Export / import (.json)** for device-to-device transfer and office review; also the future
@@ -43,6 +45,8 @@ No framework, no build step, no paid services. One HTML file, a manifest and a s
 | Document status table (author/reviewer/revision/date) | Professional accountability; DBP Act duty of care context |
 | Single fieldwork date reused everywhere | Prevents the contradictory-dates defect observed in a competitor sample |
 | AS 2870 class + written justification | The engineer classifies; the app never computes the standard |
+| Calculated class vs class adopted for design | AS 2870 allows a more conservative design class; the override is what a certifier checks, so it must be justified |
+| Slope stability & landslide risk (AGS 2007), optional | Required by councils with geotechnical slope guidelines; adds risk-to-property, risk-to-life, retaining parameters and the council declaration |
 | AS 4055 inputs + class, optional AS 1170.2 note | Wind class required for Class 1/10 design; the note is Abbot's refinement upsell |
 | Borehole logs with method/depth/water/profile | AS 1726 investigation records; certifier evidence |
 | Founding advice & bearing pressures | The differentiator — a report a structural engineer can act on |
@@ -79,6 +83,20 @@ for pixel-identical letterhead, page headers/footers with job number on every pa
 PDF/A output.
 **Phase 4 — intake integration:** quote/CRM prefill into `report.source`, client portal delivery
 links, and automatic hold-point booking reminders.
+
+## Housekeeping that must not regress
+
+- **Do not upload an older `index.html` over a newer one.** Commit 7048cdc (slope module +
+  classification split) was wiped by a later "Add files via upload" and had to be recovered from
+  git history. Uploading whole files through the web UI replaces, it does not merge.
+
+- **Every URL in the `sw.js` SHELL array must resolve.** `cache.addAll()` rejects on a single 404,
+  which rejects the install handler, which means no offline cache at all — the one thing the app
+  exists to do. `tests/ux-round.spec.js` checks this on every run.
+- **Bump `CACHE` in `sw.js` on every deploy**, or installed apps keep serving the old shell.
+- **Field binding is registered on both `input` and `change`.** Autofill, and `<select>` /
+  `<input type=date>` on some platforms, fire `change` without `input`. Do not collapse this back
+  to a single listener.
 
 ## Known MVP limits (deliberate)
 

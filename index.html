@@ -76,8 +76,13 @@ button.danger{color:#9d1c1c;border-color:#d9a5a5}
 .hero p{color:var(--ink-soft);margin:0;max-width:52ch}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:1rem 1.1rem;margin:.7rem 0}
 details.card>summary{font-family:var(--display);font-weight:700;font-size:1.02rem;cursor:pointer;
-  min-height:var(--tap);display:flex;align-items:center}
-details.card>summary::marker{color:var(--flag)}
+  min-height:var(--tap);display:flex;align-items:center;gap:.5rem;list-style:none}
+details.card>summary::-webkit-details-marker{display:none}
+details.card>summary::before{content:"";width:.6rem;height:.6rem;flex:none;
+  border-right:2px solid var(--flag);border-bottom:2px solid var(--flag);
+  transform:rotate(-45deg);margin-left:.15rem;transition:transform .15s ease}
+details.card[open]>summary::before{transform:rotate(45deg);margin-top:-.25rem}
+@media (prefers-reduced-motion: reduce){details.card>summary::before{transition:none}}
 details.card>summary+*{margin-top:.6rem}
 ul.reports{list-style:none;margin:0;padding:0}
 ul.reports li{display:flex;gap:.8rem;align-items:center;border-bottom:1px solid var(--line);padding:.7rem 0;flex-wrap:wrap}
@@ -85,7 +90,9 @@ ul.reports li:last-child{border-bottom:0}
 .reports .meta{flex:1;min-width:220px}
 .reports .meta b{display:block}
 ul.reports li button[data-export],ul.reports li button[data-del]{
-  min-width:var(--tap);padding:.5rem .6rem;font-size:1.05rem;line-height:1}
+  min-width:var(--tap);padding:.5rem .6rem;line-height:1;display:inline-flex;
+  align-items:center;justify-content:center}
+ul.reports li button svg{display:block}
 .reports .meta small{color:var(--ink-soft)}
 .badge{font-size:.72rem;font-weight:700;letter-spacing:.05em;padding:.2rem .55rem;border-radius:4px;text-transform:uppercase}
 .badge.draft{background:#fdeee4;color:var(--flag-ink)}
@@ -130,6 +137,26 @@ legend{font-weight:700;padding:0;margin:0 0 .7rem;font-family:var(--display);fon
 legend+*{clear:both}
 .grid{display:grid;gap:.85rem 1rem;grid-template-columns:repeat(auto-fit,minmax(215px,1fr))}
 .grid .wide{grid-column:1/-1}
+/* label / control / hint each occupy a shared row, so every control on a row
+   starts at the same y no matter how far its label wraps. */
+/* Starts a new grid row: an item explicitly placed in column 1 cannot share
+   a row whose first column is already occupied. Used to keep the address on
+   its own lines, with lot/council beginning the next. */
+.grid .newrow{grid-column:1}
+.pair{display:flex;gap:.7rem;align-items:start}
+.pair>div{flex:1;min-width:0}
+@supports (grid-template-rows: subgrid){
+  .grid{grid-auto-rows:auto}
+  .grid>div{display:grid;grid-template-rows:subgrid;grid-row:span 3;align-content:start;gap:0}
+  .grid>div>label{margin-bottom:.25rem}
+  /* a paired cell is itself a subgrid, so both halves keep the shared rows */
+  .grid>div.pair{grid-template-columns:1fr 1fr;column-gap:.7rem}
+  .grid>div.pair>div{display:grid;grid-template-rows:subgrid;grid-row:span 3;gap:0;min-width:0}
+}
+/* Without subgrid, reserve two label lines so the controls still align. */
+@supports not (grid-template-rows: subgrid){
+  .grid>div>label{min-height:2.65rem}
+}
 label{display:block;font-size:.88rem;font-weight:600;margin-bottom:.25rem}
 label .opt{font-weight:400;color:var(--ink-soft)}
 input,select,textarea{width:100%;font:inherit;padding:.55rem .6rem;border:1.5px solid var(--line-strong);
@@ -147,7 +174,8 @@ input[data-need]:focus,select[data-need]:focus,textarea[data-need]:focus{backgro
 .hint{font-size:.8rem;color:var(--ink-soft);margin:.25rem 0 0}
 ::placeholder{color:#6b7780;opacity:1}
 .reqmark{font-weight:600;font-size:.72rem;letter-spacing:.02em;color:var(--flag-ink);
-  background:#fdeee4;border-radius:4px;padding:.05rem .35rem;margin-left:.35rem;white-space:nowrap}
+  background:#fdeee4;border-radius:4px;padding:.05rem .35rem;margin-left:.35rem;white-space:nowrap;
+  display:inline-block}
 .grid .narrow{max-width:11rem}
 .rowlist{border-top:1px dashed var(--line);margin-top:.6rem;padding-top:.6rem}
 .rowitem{border:1px solid var(--line);border-radius:8px;padding:.7rem .8rem;margin:.55rem 0;background:var(--card)}
@@ -634,9 +662,20 @@ function show(view){
   window.scrollTo(0,0);
 }
 
+/* Line icons rather than emoji: emoji render differently on every platform and
+   at unpredictable weights next to text buttons. */
+const ICON_EXPORT = `<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor"
+  stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+  <path d="M10 13V3"/><path d="M6.5 6.5 10 3l3.5 3.5"/><path d="M3.5 13v3.5h13V13"/></svg>`;
+const ICON_DELETE = `<svg viewBox="0 0 20 20" width="18" height="18" fill="none" stroke="currentColor"
+  stroke-width="1.8" stroke-linecap="round" aria-hidden="true" focusable="false">
+  <path d="M5.5 5.5l9 9"/><path d="M14.5 5.5l-9 9"/></svg>`;
+
 /* ---------- home ---------- */
 function renderHome(){
-  $("ctx").textContent = "";
+  /* The header context doubles as "back to all reports"; on the list itself it
+     has nothing to say and nowhere to go, so it is hidden rather than empty. */
+  $("ctx").textContent = ""; $("ctx").hidden = true;
   const list = $("reportlist"); list.innerHTML = "";
   const items = Object.values(db).sort((a,b)=>b.updated.localeCompare(a.updated));
   $("emptyhint").hidden = items.length>0;
@@ -646,8 +685,8 @@ function renderHome(){
       <small>${esc(TYPES[r.type].label)} · Job ${esc(r.d.jobNo||"—")} · updated ${new Date(r.updated).toLocaleDateString("en-AU")}</small></div>
       <span class="badge ${statusOf(r)}">${{draft:"Draft",review:"Awaiting review",issued:"Issued"}[statusOf(r)]}</span>
       <button class="primary" data-open="${r.id}">Open</button>
-      <button data-export="${r.id}" title="Export as .json" aria-label="Export ${esc(r.d.jobNo||r.d.street||"report")}">⭳</button>
-      <button class="danger" data-del="${r.id}" title="Delete" aria-label="Delete ${esc(r.d.jobNo||r.d.street||"report")}">🗑</button>`;
+      <button data-export="${r.id}" title="Export as .json" aria-label="Export ${esc(r.d.jobNo||r.d.street||"report")}">${ICON_EXPORT}</button>
+      <button class="danger" data-del="${r.id}" title="Delete" aria-label="Delete ${esc(r.d.jobNo||r.d.street||"report")}">${ICON_DELETE}</button>`;
     list.appendChild(li);
   }
 }
@@ -694,10 +733,14 @@ function renderTabs(opts){
   $("prevbtn").disabled = sectionIdx===0;
   $("nextbtn").textContent = sectionIdx===secs.length-1 ? "Preview report →" : "Next →";
   $("previewbtn").hidden = sectionIdx===secs.length-1;
+  $("ctx").hidden = false;
   $("ctx").textContent = `← ${report().d.street||"New report"} · Job ${report().d.jobNo||"—"}`;
 }
 
 /* field helpers */
+/* Two short fields that belong together share one grid cell, so neither is
+   stranded in a column of its own. */
+function pair(a,b){ return `<div class="pair">${a}${b}</div>`; }
 function F(key,label,opts={}){
   const d=report().d, t=opts.type||"text";
   /* One marker only: required. Everything unmarked is optional, so the form
@@ -708,7 +751,7 @@ function F(key,label,opts={}){
   /* Format examples live in the placeholder, not in a hint line below the
      field: same guidance, one less line of standing text per field. */
   const ph = opts.ph?` placeholder="${esc(opts.ph)}"`:"";
-  const cls = `${opts.wide?"wide":""}${opts.narrow?" narrow":""}`;
+  const cls = `${opts.wide?"wide":""}${opts.narrow?" narrow":""}${opts.newrow?" newrow":""}`;
   if(t==="textarea") return `<div class="${cls}"><label for="f_${key}">${label}${req}</label>
     <textarea id="f_${key}" data-k="${key}"${ac}${ph}>${esc(d[key])}</textarea>${opts.hint?`<p class="hint">${opts.hint}</p>`:""}</div>`;
   if(t==="select") return `<div class="${cls}"><label for="f_${key}">${label}${req}</label>
@@ -737,9 +780,9 @@ setup(r){ return `
  <div class="grid">
   ${F("author","Author — engineer",{req:1,ac:"name"})}
   ${F("authorQual","Author qualifications",{ph:"BEng (Civil) MIEAust CPEng"})}
+  ${F("authorReg","Author registration no.",{ph:"NSW DBP PE / NER / CPEng"})}
   ${F("reviewer","Reviewer",{req:1})}
   ${F("reviewerQual","Reviewer qualifications",{ph:"BEng (Civil) MIEAust CPEng"})}
-  ${F("authorReg","Author registration no.",{ph:"NSW DBP PE / NER / CPEng"})}
   ${F("reviewerReg","Reviewer registration no.",{ph:"NSW DBP PE / NER / CPEng"})}
  </div>
 </fieldset>`; },
@@ -757,9 +800,9 @@ client(r){ return `
  <div class="grid">
   ${F("street","Street address",{req:1,wide:1})}
   ${F("suburb","Suburb",{req:1})}
-  ${F("state","State",{type:"select",narrow:1,options:["NSW","QLD","VIC","SA","WA","TAS","NT","ACT"]})}
-  ${F("postcode","Postcode",{req:1,im:"numeric",narrow:1,ph:"2323"})}
-  ${F("lotDp","Lot & DP",{req:1,ph:"Lot 12 DP 1234567"})}
+  ${pair(F("state","State",{type:"select",options:["NSW","QLD","VIC","SA","WA","TAS","NT","ACT"]}),
+         F("postcode","Postcode",{req:1,im:"numeric",ph:"2323"}))}
+  ${F("lotDp","Lot & DP",{req:1,newrow:1,ph:"Lot 12 DP 1234567"})}
   ${F("council","Council / LGA")}
  </div>
 </fieldset>
@@ -860,7 +903,7 @@ cls(r){ return `
 <fieldset><legend>AS 2870 site classification</legend>
  <div class="grid">
   ${F("siteClass","Site classification — as calculated",{type:"select",req:1,options:["",...AS2870]})}
-  ${F("ys","Characteristic surface movement ys (mm)",{im:"decimal",narrow:1,ph:"35"})}
+  ${F("ys","Surface movement y<sub>s</sub> (mm)",{im:"decimal",narrow:1,ph:"35"})}
   ${F("classJust","Basis of classification",{type:"textarea",req:1,wide:1,ph:"Subsurface profile, lab results, visual assessment, trees, fill"})}
   ${F("bearing","Allowable bearing pressures",{type:"textarea",wide:1,ph:"100 kPa at 1.1 m (BH1); 150 kPa at 1.4 m (BH2)"})}
  </div>
@@ -894,9 +937,9 @@ slope(r){ return `
 <fieldset><legend>Retaining wall design parameters</legend>
  <div class="grid">
   ${F("rwBulkUnitWeight","Bulk unit weight (kN/m³)",{im:"decimal",narrow:1,ph:"18"})}
-  ${F("rwKa","Active earth pressure coefficient Ka",{im:"decimal",narrow:1,ph:"0.33"})}
-  ${F("rwK0","At-rest earth pressure coefficient K0",{im:"decimal",narrow:1,ph:"0.5"})}
-  ${F("rwKp","Passive earth pressure coefficient Kp",{im:"decimal",narrow:1,ph:"3.0"})}
+  ${F("rwKa","Active pressure K<sub>a</sub>",{im:"decimal",narrow:1,ph:"0.33"})}
+  ${F("rwK0","At-rest pressure K<sub>0</sub>",{im:"decimal",narrow:1,ph:"0.5"})}
+  ${F("rwKp","Passive pressure K<sub>p</sub>",{im:"decimal",narrow:1,ph:"3.0"})}
   ${F("rwFosSliding","FOS — sliding",{im:"decimal",narrow:1})}
   ${F("rwFosOverturning","FOS — overturning",{im:"decimal",narrow:1})}
   ${F("rwFosBearing","FOS — bearing capacity",{im:"decimal",narrow:1})}

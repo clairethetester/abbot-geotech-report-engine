@@ -727,3 +727,125 @@ test.describe('R — derived fields update in place', () => {
       'the description must survive the rating update').toBe('Rockfall from the batter');
   });
 });
+
+/* ------------------------------------------------------------------ *
+ * F14 — form alignment and layout polish                              *
+ * ------------------------------------------------------------------ */
+test.describe('F14 — form layout', () => {
+  test('every control on a grid row starts at the same y, chip or no chip', async ({ page }) => {
+    await page.setViewportSize({ width: 900, height: 1000 });
+    await newReport(page, 'comprehensive');
+    for (const label of ['Setup', 'Client & site ID', 'Site description', 'Fieldwork',
+                         'Classification', 'Wind', 'Recommendations', 'Review & issue']) {
+      await gotoTab(page, label);
+      const worst = await page.evaluate(() => {
+        let worst = 0;
+        document.querySelectorAll('#form .grid').forEach(g => {
+          const rows = {};
+          g.querySelectorAll(':scope > div, :scope > div.pair > div').forEach(cell => {
+            const c = cell.querySelector('input,select,textarea'); if (!c) return;
+            const key = Math.round(cell.getBoundingClientRect().top);
+            (rows[key] = rows[key] || []).push(Math.round(c.getBoundingClientRect().top));
+          });
+          Object.values(rows).forEach(tops => {
+            if (tops.length > 1) worst = Math.max(worst, Math.max(...tops) - Math.min(...tops));
+          });
+        });
+        return worst;
+      });
+      expect(worst, `controls misaligned on ${label}`).toBeLessThanOrEqual(1);
+    }
+  });
+
+  test('registration numbers follow their own person', async ({ page }) => {
+    await newReport(page, 'comprehensive');
+    await gotoTab(page, 'Setup');
+    const order = await page.$$eval('#form [data-k]', els => els.map(e => e.dataset.k));
+    const want = ['author', 'authorQual', 'authorReg', 'reviewer', 'reviewerQual', 'reviewerReg'];
+    expect(order.filter(k => want.includes(k))).toEqual(want);
+  });
+
+  test('state and postcode sit together in one cell', async ({ page }) => {
+    await newReport(page, 'comprehensive');
+    await gotoTab(page, 'Client & site ID');
+    const paired = await page.evaluate(() => {
+      const st = document.getElementById('f_state').closest('.pair');
+      const pc = document.getElementById('f_postcode').closest('.pair');
+      return !!st && st === pc;
+    });
+    expect(paired).toBe(true);
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * F15 — home page affordances                                         *
+ * ------------------------------------------------------------------ */
+test.describe('F15 — home affordances', () => {
+  test('report row actions are line icons, not emoji', async ({ page }) => {
+    await newReport(page, 'comprehensive');
+    await page.click('#ctx');
+    await expect(page.locator('ul.reports li button[data-export] svg')).toHaveCount(1);
+    await expect(page.locator('ul.reports li button[data-del] svg')).toHaveCount(1);
+    for (const sel of ['[data-export]', '[data-del]']) {
+      await expect(page.locator(`ul.reports li button${sel}`)).toHaveAttribute('aria-label', /.+/);
+      const box = await page.locator(`ul.reports li button${sel}`).boundingBox();
+      expect(box.width, 'must stay a 44px target').toBeGreaterThanOrEqual(44);
+      expect(box.height).toBeGreaterThanOrEqual(44);
+    }
+  });
+
+  test('the transfer card shows it is expandable and turns when opened', async ({ page }) => {
+    await page.goto('/index.html');
+    const marker = () => page.locator('details.card > summary').evaluate(el =>
+      getComputedStyle(el, '::before').transform);
+    const closed = await marker();
+    await page.click('details.card > summary');
+    await page.waitForTimeout(250);
+    expect(await marker(), 'the chevron must rotate when open').not.toBe(closed);
+    expect(closed, 'a chevron must be drawn at all').not.toBe('none');
+  });
+
+  test('the header context is hidden on the report list', async ({ page }) => {
+    await newReport(page, 'comprehensive');
+    await expect(page.locator('#ctx')).toBeVisible();
+    await page.click('#ctx');
+    await expect(page.locator('#ctx')).toBeHidden();
+  });
+});
+
+test.describe('F16 — address block layout', () => {
+  test('the address keeps its own lines; lot and council start the next row', async ({ page }) => {
+    for (const width of [1100, 900, 700]) {
+      await page.setViewportSize({ width, height: 900 });
+      await newReport(page, 'comprehensive');
+      await gotoTab(page, 'Client & site ID');
+      const rows = await page.evaluate(() => {
+        const g = document.getElementById('f_street').closest('.grid');
+        const map = {};
+        g.querySelectorAll(':scope > div').forEach(c => {
+          const k = Math.round(c.getBoundingClientRect().top);
+          const f = c.classList.contains('pair')
+            ? [...c.querySelectorAll('[data-k]')].map(x => x.dataset.k).join('+')
+            : (c.querySelector('[data-k]') || { dataset: {} }).dataset.k;
+          (map[k] = map[k] || []).push(f);
+        });
+        return Object.keys(map).sort((a, b) => a - b).map(k => map[k]);
+      });
+      expect(rows[0], `street alone at ${width}px`).toEqual(['street']);
+      expect(rows[1], `suburb/state/postcode together at ${width}px`).toEqual(['suburb', 'state+postcode']);
+      expect(rows[2], `lot and council on their own row at ${width}px`).toEqual(['lotDp', 'council']);
+    }
+  });
+
+  test('it still stacks one per line on a phone', async ({ page }) => {
+    await page.setViewportSize({ width: 430, height: 800 });
+    await newReport(page, 'comprehensive');
+    await gotoTab(page, 'Client & site ID');
+    const sameRow = await page.evaluate(() => {
+      const a = document.getElementById('f_suburb').closest('.grid>div, .pair');
+      const b = document.getElementById('f_lotDp').closest('div');
+      return Math.abs(a.getBoundingClientRect().top - b.getBoundingClientRect().top) < 2;
+    });
+    expect(sameRow).toBe(false);
+  });
+});

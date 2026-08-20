@@ -7,8 +7,8 @@
 <meta name="description" content="Abbot Design geotechnical report engine — field data capture and certifier-ready report generation.">
 <title>Abbot Report Engine</title>
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icons/icon-192.png">
-<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
 <style>
 /* ============================================================
    Design tokens — "field instrument" direction.
@@ -35,24 +35,26 @@
   --tap:44px; /* WCAG 2.2 target size with headroom */
 }
 *{box-sizing:border-box}
-html{font-size:16px}
+html{font-size:16px;scroll-padding-top:var(--chromeh,140px)}
 body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font);line-height:1.5}
 :focus-visible{outline:3px solid var(--focus);outline-offset:2px;border-radius:4px}
 .skip{position:absolute;left:-999px;top:0;background:var(--card);color:var(--ink);padding:.6rem 1rem;z-index:99}
 .skip:focus{left:8px;top:8px}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 @media (prefers-reduced-motion: no-preference){
   .view{animation:fade .18s ease}
   @keyframes fade{from{opacity:.4}to{opacity:1}}
 }
 
 /* ---------- chassis ---------- */
-header.app{background:var(--basalt);color:#fff;padding:.65rem 1rem;display:flex;gap:.75rem;align-items:center;flex-wrap:wrap}
-header.app .mark{font-family:var(--display);font-weight:800;font-size:.82rem;letter-spacing:.08em;line-height:1.25}
+header.app{background:var(--basalt);color:#fff;padding:.65rem 1rem;display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;
+  position:sticky;top:0;z-index:7}
+header.app .mark{font-family:var(--display);font-weight:800;font-size:.82rem;letter-spacing:.08em;line-height:1.25;
+  max-width:min(58vw,430px)}
 header.app .mark span{color:#ffb38a}
 header.app .ctx{font-size:.85rem;opacity:.9;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   background:transparent;border:0;color:#fff;text-align:left;padding:.3rem .2rem;min-height:0;cursor:pointer;border-radius:6px}
 header.app .ctx:hover{background:rgba(255,255,255,.08)}
-header.app .mark{max-width:min(58vw,430px)}
 header.app .savestate{font-size:.78rem;background:var(--basalt-deep);padding:.25rem .6rem;border-radius:999px}
 header.app .helpbtn{font-size:.8rem;color:#fff;text-decoration:none;background:var(--basalt-deep);
   padding:.3rem .7rem;border-radius:999px;border:1px solid rgba(255,255,255,.25);white-space:nowrap}
@@ -73,11 +75,17 @@ button.danger{color:#9d1c1c;border-color:#d9a5a5}
 .hero h1{font-family:var(--display);font-size:1.7rem;margin:0 0 .3rem}
 .hero p{color:var(--ink-soft);margin:0;max-width:52ch}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:1rem 1.1rem;margin:.7rem 0}
+details.card>summary{font-family:var(--display);font-weight:700;font-size:1.02rem;cursor:pointer;
+  min-height:var(--tap);display:flex;align-items:center}
+details.card>summary::marker{color:var(--flag)}
+details.card>summary+*{margin-top:.6rem}
 ul.reports{list-style:none;margin:0;padding:0}
 ul.reports li{display:flex;gap:.8rem;align-items:center;border-bottom:1px solid var(--line);padding:.7rem 0;flex-wrap:wrap}
 ul.reports li:last-child{border-bottom:0}
 .reports .meta{flex:1;min-width:220px}
 .reports .meta b{display:block}
+ul.reports li button[data-export],ul.reports li button[data-del]{
+  min-width:var(--tap);padding:.5rem .6rem;font-size:1.05rem;line-height:1}
 .reports .meta small{color:var(--ink-soft)}
 .badge{font-size:.72rem;font-weight:700;letter-spacing:.05em;padding:.2rem .55rem;border-radius:4px;text-transform:uppercase}
 .badge.draft{background:#fdeee4;color:var(--flag-ink)}
@@ -88,29 +96,38 @@ ul.reports li:last-child{border-bottom:0}
 .typegrid b{display:block;margin-bottom:.25rem}
 .typegrid small{color:var(--ink-soft);font-weight:400}
 
-/* ---------- strata progress spine (signature element) ----------
-   Each report section is a stratum; it fills as the section completes. */
-.strata{display:flex;height:14px;border-radius:7px;overflow:hidden;border:1px solid var(--line-strong);margin:.6rem 0 .2rem}
-.strata span{flex:1;background:#e7e4db;position:relative}
-.strata span+span{border-left:1px solid var(--card)}
-.strata span i{position:absolute;inset:0;transform-origin:left;background:#2f6db5;display:block}
-.strata span.done i{background:var(--ok)}
-.strata span.active::after{content:"";position:absolute;left:0;right:0;bottom:0;height:4px;background:#2f6db5;z-index:2}
-.stratalabel{font-size:.78rem;color:var(--ink-soft)}
+/* ---------- section progress ----------
+   The tab rail is the progress indicator: a pill is tinted green when the
+   section is complete, outlined orange when started, plain when untouched.
+   The separate segmented bar was removed — it duplicated the rail and its
+   fixed 45% partial fill read as a rendering fault. */
+.stratalabel{font-size:.78rem;color:var(--ink-soft);padding:.1rem 0 .35rem}
 
 /* ---------- editor tabs ---------- */
-nav.tabs{position:sticky;top:0;background:var(--paper);z-index:5;padding:.4rem 0 .5rem;border-bottom:1px solid var(--line)}
-nav.tabs .rail{display:flex;gap:.35rem;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:thin;padding-bottom:2px}
+nav.tabs{position:sticky;top:var(--headh,52px);background:var(--paper);z-index:5;padding:.4rem 0 .5rem;border-bottom:1px solid var(--line)}
+nav.tabs .rail{display:flex;gap:.35rem;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:thin;padding-bottom:2px;
+  mask-image:linear-gradient(to right,transparent 0,#000 14px,#000 calc(100% - 14px),transparent 100%);
+  -webkit-mask-image:linear-gradient(to right,transparent 0,#000 14px,#000 calc(100% - 14px),transparent 100%)}
 nav.tabs button{white-space:nowrap;border-radius:999px;min-height:40px;padding:.35rem .85rem;font-size:.9rem;border-width:1.5px}
-nav.tabs button[aria-current="step"]{background:var(--basalt);border-color:var(--basalt);color:#fff}
+nav.tabs button.done{background:#eaf5ef;border-color:#8fc9ae}
 nav.tabs button.done::before{content:"✓ ";color:var(--ok);font-weight:700}
+nav.tabs button.started{border-color:var(--flag);border-style:dashed}
+nav.tabs button.started::before{content:"● ";color:var(--flag);font-size:.7em;vertical-align:.15em}
+nav.tabs button[aria-current="step"]{background:var(--basalt);border-color:var(--basalt);color:#fff}
+nav.tabs button[aria-current="step"].done{background:var(--basalt);border-color:var(--ok);border-width:2px}
 nav.tabs button[aria-current="step"].done::before{color:#9fe3c0}
+nav.tabs button[aria-current="step"].started{border-color:#ffb38a;border-style:solid}
+nav.tabs button[aria-current="step"].started::before{color:#ffb38a}
 
 /* ---------- forms ---------- */
-fieldset{border:1px solid var(--line);border-radius:var(--radius);background:var(--card);padding:1rem 1.1rem;margin:0 0 1rem}
-legend{font-weight:700;padding:0;margin:0 0 .7rem;font-family:var(--display);font-size:1.02rem;float:left;width:100%;letter-spacing:.01em}
+/* Groups are separated by a rule and their legend, not by a bordered card.
+   Four to six nested white boxes on off-white paper carried no information and
+   ate the width the form actually needs. */
+fieldset{border:0;border-top:2px solid var(--line);border-radius:0;background:transparent;
+  padding:1rem 0 .4rem;margin:0 0 .6rem}
+fieldset:first-of-type{border-top:0;padding-top:.4rem}
+legend{font-weight:700;padding:0;margin:0 0 .7rem;font-family:var(--display);font-size:1.02rem;float:left;width:100%;letter-spacing:.01em;color:var(--basalt)}
 legend+*{clear:both}
-fieldset{padding-top:1.1rem}
 .grid{display:grid;gap:.85rem 1rem;grid-template-columns:repeat(auto-fit,minmax(215px,1fr))}
 .grid .wide{grid-column:1/-1}
 label{display:block;font-size:.88rem;font-weight:600;margin-bottom:.25rem}
@@ -123,9 +140,17 @@ select{appearance:none;-webkit-appearance:none;
   background-repeat:no-repeat;background-position:right .75rem center;
   padding-right:2.4rem;text-overflow:ellipsis;white-space:nowrap;overflow:hidden}
 input:invalid[data-touched],select:invalid[data-touched]{border-color:#c22}
+/* A draft is legitimately incomplete, so a required-but-empty field is amber
+   ("still needed"), never red ("wrong"). Red stays for genuine validity errors. */
+input[data-need],select[data-need],textarea[data-need]{border-color:#c9a227;background:#fffdf5}
+input[data-need]:focus,select[data-need]:focus,textarea[data-need]:focus{background:#fff}
 .hint{font-size:.8rem;color:var(--ink-soft);margin:.25rem 0 0}
+::placeholder{color:#6b7780;opacity:1}
+.reqmark{font-weight:600;font-size:.72rem;letter-spacing:.02em;color:var(--flag-ink);
+  background:#fdeee4;border-radius:4px;padding:.05rem .35rem;margin-left:.35rem;white-space:nowrap}
+.grid .narrow{max-width:11rem}
 .rowlist{border-top:1px dashed var(--line);margin-top:.6rem;padding-top:.6rem}
-.rowitem{border:1px solid var(--line);border-radius:8px;padding:.7rem .8rem;margin:.55rem 0;background:#fbfaf7}
+.rowitem{border:1px solid var(--line);border-radius:8px;padding:.7rem .8rem;margin:.55rem 0;background:var(--card)}
 .rowitem .rowhead{display:flex;justify-content:space-between;align-items:center;gap:.5rem;margin-bottom:.5rem}
 .rowitem .rowhead b{font-family:var(--display)}
 .inline{display:flex;gap:.6rem;flex-wrap:wrap;align-items:end}
@@ -144,7 +169,8 @@ input:invalid[data-touched],select:invalid[data-touched]{border-color:#c22}
 /* footer nav */
 .stepnav{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);
   display:flex;gap:.6rem;justify-content:space-between;align-items:center;padding:.6rem max(1rem, env(safe-area-inset-left)) calc(.6rem + env(safe-area-inset-bottom));z-index:6}
-.stepnav .mid{flex:1;text-align:center;font-size:.82rem;color:var(--ink-soft)}
+.stepnav .mid{flex:1;min-width:0;text-align:center;font-size:.82rem;color:var(--ink-soft);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 
 /* issue gate */
 .gaps{background:#fff7f1;border:1px solid #ecc9b2;border-radius:var(--radius);padding: .8rem 1rem}
@@ -152,12 +178,16 @@ input:invalid[data-touched],select:invalid[data-touched]{border-color:#c22}
 .gaps a{color:var(--flag-ink)}
 [hidden]{display:none !important}
 .toast{position:fixed;bottom:84px;left:50%;transform:translateX(-50%);background:var(--basalt);color:#fff;
-  padding:.6rem 1.1rem;border-radius:999px;font-size:.9rem;z-index:20;box-shadow:0 4px 18px rgba(0,0,0,.25)}
+  padding:.6rem 1.1rem;border-radius:999px;font-size:.9rem;z-index:20;box-shadow:0 4px 18px rgba(0,0,0,.25);
+  display:flex;align-items:center;gap:.7rem;max-width:min(92vw,32rem)}
+.toast button.undo{min-height:32px;padding:.15rem .8rem;background:transparent;color:#fff;
+  border:1.5px solid rgba(255,255,255,.55);border-radius:999px;font-weight:600;flex:none}
+.toast button.undo:hover{background:var(--flag);border-color:var(--flag)}
 
 /* ============================================================
    REPORT PREVIEW + PRINT  (the deliverable document)
    ============================================================ */
-#preview{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:0;overflow:hidden}
+#preview{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:0}
 .rpt{font-family:var(--font);color:#111;padding:2.2rem 2.4rem;position:relative;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .rpt h1,.rpt h2,.rpt h3,.rpt .rh{font-family:var(--display)}
 .rpt-cover{text-align:center;padding:2.4rem 1rem 2rem;border-top:10px solid var(--flag);border-bottom:6px solid var(--basalt)}
@@ -203,7 +233,8 @@ input:invalid[data-touched],select:invalid[data-touched]{border-color:#c22}
 .wm{position:absolute;inset:0;pointer-events:none;overflow:hidden}
 .wm b{position:absolute;top:42%;left:50%;transform:translate(-50%,-50%) rotate(-28deg);
   font-size:5rem;color:rgba(198,40,40,.14);border:6px solid rgba(198,40,40,.14);padding:.4rem 2rem;white-space:nowrap}
-.previewbar{display:flex;gap:.6rem;flex-wrap:wrap;padding: .8rem 1rem;border-bottom:1px solid var(--line);background:#fbfaf7}
+.previewbar{display:flex;gap:.6rem;flex-wrap:wrap;padding:.8rem 1rem;border-bottom:1px solid var(--line);background:#fbfaf7;
+  position:sticky;top:var(--headh,52px);z-index:4;border-radius:var(--radius) var(--radius) 0 0}
 
 @media print{
   body{background:#fff}
@@ -217,6 +248,10 @@ input:invalid[data-touched],select:invalid[data-touched]{border-color:#c22}
   .pagebreak{break-before:page}
   @page{margin:18mm 16mm;size:A4}
 }
+@media (max-width:560px){
+  header.app .markrest{display:none}
+  header.app{padding:.5rem .8rem}
+}
 @media (max-width:640px){
   .rpt{padding:1.2rem 1rem}
   .rpt .kv{grid-template-columns:1fr}
@@ -228,24 +263,24 @@ input:invalid[data-touched],select:invalid[data-touched]{border-color:#c22}
 <body>
 <a class="skip" href="#main">Skip to main content</a>
 <header class="app">
-  <div class="mark">ABBOT DESIGN<span> · </span>GEOTECH REPORT ENGINE</div>
-  <button type="button" class="ctx" id="ctx" aria-live="polite" title="Show full job details"></button>
+  <div class="mark">ABBOT DESIGN<span class="markrest"><span> · </span>GEOTECH REPORT ENGINE</span></div>
+  <button type="button" class="ctx" id="ctx" title="Back to all reports"></button>
   <a class="helpbtn" href="engine-manual.pdf" target="_blank" rel="noopener" aria-label="Help — open the one-page manual (PDF)">?&nbsp;Help</a>
-  <span class="savestate" id="savestate" role="status">Ready</span>
+  <span class="savestate" id="savestate" role="status">Autosave on</span>
 </header>
 
 <main id="main">
   <!-- ================= HOME ================= -->
   <section class="view" id="view-home">
-    <div class="hero">
-      <h1>Field reports, scoped right, drilled once.</h1>
-      <p>Capture the investigation as you walk the site. Every fact is entered once and flows through the whole
-         report — so the document your certifier reads never contradicts itself.</p>
+    <div class="card">
+      <h2 style="margin:.1rem 0 .4rem;font-family:var(--display)">Reports on this device</h2>
+      <ul class="reports" id="reportlist"></ul>
+      <p class="hint" id="emptyhint">No reports yet.</p>
     </div>
 
     <div class="card">
       <h2 style="margin:.1rem 0 .2rem;font-family:var(--display)">Start a new report</h2>
-      <p class="hint">The report type sets which sections apply. You can change it later without losing data.</p>
+      <p class="hint">Sections adjust to the type. You can change it later.</p>
       <div class="typegrid">
         <button data-newtype="desktop"><b>Desktop Geotechnical Assessment</b><small>Records, geology and hazard overlays. No fieldwork sections.</small></button>
         <button data-newtype="classification"><b>Site Classification + Wind</b><small>AS 2870 lot classification and AS 4055 wind class. Certifier-ready.</small></button>
@@ -253,32 +288,23 @@ input:invalid[data-touched],select:invalid[data-touched]{border-color:#c22}
       </div>
     </div>
 
-    <div class="card">
-      <h2 style="margin:.1rem 0 .4rem;font-family:var(--display)">Reports on this device</h2>
-      <ul class="reports" id="reportlist"></ul>
-      <p class="hint" id="emptyhint">No reports yet. Reports save automatically to this device.</p>
-    </div>
-
-    <div class="card">
-      <h2 style="margin:.1rem 0 .2rem;font-family:var(--display)">Transfer between devices</h2>
-      <p class="hint">New here? The <b>? Help</b> button (top right) opens the one-page manual — install steps, workflow and what to watch out for.</p>
-      <p class="hint">This engine has no cloud sync yet: <b>Export</b> a report (buttons above) to a .json file, send it to another
-        device, then <b>Import</b> it there. Typical use: field tablet → office computer for review.</p>
+    <details class="card">
+      <summary>Transfer between devices</summary>
+      <p class="hint">No cloud sync yet. Export a report to .json, send it to the other device, and import it there.</p>
       <div class="inline">
         <button id="importbtn">Import a report (.json)</button>
         <input type="file" id="importfile" accept="application/json" hidden aria-hidden="true">
       </div>
-    </div>
+    </details>
   </section>
 
   <!-- ================= EDITOR ================= -->
   <section class="view" id="view-editor" hidden>
     <nav class="tabs" aria-label="Report sections">
-      <div class="strata" id="strata" aria-hidden="true"></div>
-      <div class="stratalabel" id="stratalabel">Section progress</div>
+      <div class="stratalabel" id="stratalabel" role="status">Section progress</div>
       <div class="rail" id="tabrail" role="tablist"></div>
     </nav>
-    <form id="form" novalidate autocomplete="on"></form>
+    <form id="form" novalidate autocomplete="off"></form>
   </section>
 
   <!-- ================= PREVIEW ================= -->
@@ -305,7 +331,6 @@ input:invalid[data-touched],select:invalid[data-touched]{border-color:#c22}
 <div class="stepnav no-print" id="stepnav" hidden>
   <button id="prevbtn">← Back</button>
   <span class="mid" id="stepmid"></span>
-  <button id="homebtn" class="quiet">All reports</button>
   <button id="previewbtn">Preview</button>
   <button class="primary" id="nextbtn">Next →</button>
 </div>
@@ -451,6 +476,21 @@ function ask(msg, yesLabel){
 function inFrame(){ try{ return window.self!==window.top; }catch(e){ return true; } }
 function note(msg){ const t=document.createElement("div"); t.className="toast"; t.textContent=msg;
   document.body.appendChild(t); setTimeout(()=>t.remove(),3500); }
+/* Row deletes used to be instant and irreversible — one mis-tap on a tablet in
+   the field lost a fully logged borehole. A confirm dialog on every row would be
+   intolerable in tap-heavy use, so deletes stay instant and offer an undo. */
+let undoT;
+function noteUndo(msg, restore){
+  clearTimeout(undoT);
+  document.querySelectorAll(".toast").forEach(x=>x.remove());
+  const t=document.createElement("div"); t.className="toast";
+  const span=document.createElement("span"); span.textContent=msg;
+  const b=document.createElement("button"); b.type="button"; b.className="undo"; b.textContent="Undo";
+  b.addEventListener("click",()=>{ clearTimeout(undoT); restore(); saveDb(); renderEditor({focus:false}); t.remove(); note("Restored."); });
+  t.appendChild(span); t.appendChild(b);
+  document.body.appendChild(t);
+  undoT=setTimeout(()=>t.remove(),7000);
+}
 const esc = s => String(s??"").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const nl = s => esc(s).replace(/\n/g,"<br>");
 /* mini-markdown for recommendation descriptions: "# " heading, "- " bullets, "|a|b|" tables */
@@ -497,9 +537,40 @@ function requirements(r){
   need(d.limitations,"Limitations statement","review");
   return q;
 }
+/* Which plain fields count as "the user has entered something here".
+   Fields with a non-empty default (revision, dateIssued, state, windRegion,
+   groundwater, limitations) are deliberately excluded — they are not evidence
+   of work done. */
+const SECFIELDS = {
+  setup:["jobNo","author","reviewer","authorQual","reviewerQual","authorReg","reviewerReg"],
+  client:["client","careOf","clientPhone","clientEmail","projectDesc","street","suburb","postcode","lotDp","council","drawingsBy","drawingNos","drawingsDate"],
+  site:["access","existing","vegetation","slopeDeg","aspect","drainage","neighbours","geologyMap","geologyUnit","history"],
+  field:["fieldDate","operator","weather","equipment"],
+  lab:["labName","labDate"],
+  cls:["siteClass","ys","classJust","bearing"],
+  wind:["terrain","topo","shielding","windClass"],
+  recs:["founding","excavation","retaining","fills","drainageRec","hazards","extraRecs"],
+  photos:[], review:[]
+};
+function sectionTouched(r, secId){
+  if(secId==="field")  return r.boreholes.length>0 || r.dcps.length>0 || !!r.d.fieldDate;
+  if(secId==="lab")    return r.samples.length>0 || (r.attachments||[]).length>0 || !!r.d.labName;
+  if(secId==="photos") return r.photos.length>0;
+  if(secId==="site")   return !!r.siteFigure || (r.plans||[]).length>0 ||
+                              (SECFIELDS.site).some(k=>String(r.d[k]||"").trim()!=="");
+  if(secId==="recs")   return r.d.footings.length>0 || (r.d.recRows||[]).length>0 ||
+                              (SECFIELDS.recs).some(k=>String(r.d[k]||"").trim()!=="");
+  if(secId==="review") return !!r.d.authorSig || !!r.d.reviewerSig || (r.d.dist||[]).length>0;
+  return (SECFIELDS[secId]||[]).some(k=>String(r.d[k]||"").trim()!=="");
+}
+/* A section is complete only when it has no outstanding requirements AND the
+   engineer has actually entered something. Without the second test, sections
+   that carry no requirements (Photos, Results, Review) showed a green tick on
+   a brand-new report. The issue gate itself is requirements() and is
+   unchanged — this only governs what the tabs and the count line claim. */
 function sectionState(r, secId){
   const gaps = requirements(r).filter(g=>g.sec===secId);
-  return gaps.length===0;
+  return gaps.length===0 && sectionTouched(r, secId);
 }
 
 /* ============================================================
@@ -523,55 +594,66 @@ function renderHome(){
     li.innerHTML = `<div class="meta"><b>${esc(r.d.street||"(no address yet)")}, ${esc(r.d.suburb||"")}</b>
       <small>${esc(TYPES[r.type].label)} · Job ${esc(r.d.jobNo||"—")} · updated ${new Date(r.updated).toLocaleDateString("en-AU")}</small></div>
       <span class="badge ${statusOf(r)}">${{draft:"Draft",review:"Awaiting review",issued:"Issued"}[statusOf(r)]}</span>
-      <button data-open="${r.id}">Open</button>
-      <button data-export="${r.id}">Export</button>
-      <button class="danger" data-del="${r.id}">Delete</button>`;
+      <button class="primary" data-open="${r.id}">Open</button>
+      <button data-export="${r.id}" title="Export as .json" aria-label="Export ${esc(r.d.jobNo||r.d.street||"report")}">⭳</button>
+      <button class="danger" data-del="${r.id}" title="Delete" aria-label="Delete ${esc(r.d.jobNo||r.d.street||"report")}">🗑</button>`;
     list.appendChild(li);
   }
 }
 
 /* ---------- editor scaffolding ---------- */
 function visibleSections(){ return SECTIONS.filter(s=>s.types.includes(report().type)); }
-function renderTabs(){
+function renderTabs(opts){
+  const scroll = !opts || opts.scroll !== false;
   const secs = visibleSections();
-  const rail = $("tabrail"); rail.innerHTML="";
-  const strata = $("strata"); strata.innerHTML="";
+  const rail = $("tabrail");
+  /* Rebuilding the rail resets scrollLeft. On a live refresh (typing) that
+     yanked the pills back to the start mid-keystroke, so hold the position. */
+  const keepScroll = scroll ? null : rail.scrollLeft;
+  rail.innerHTML="";
   secs.forEach((s,i)=>{
     const done = sectionState(report(), s.id);
     const b=document.createElement("button");
-    b.type="button"; b.textContent=s.label; b.className = done?"done":"";
+    b.type="button"; b.textContent=s.label;
+    b.className = done ? "done" : (sectionTouched(report(),s.id) ? "started" : "");
     if(i===sectionIdx) b.setAttribute("aria-current","step");
     b.addEventListener("click",()=>{ sectionIdx=i; renderEditor(); });
     rail.appendChild(b);
-    const seg=document.createElement("span");
-    seg.className = (i===sectionIdx?"active ":"")+(done?"done":"");
-    seg.innerHTML = `<i style="transform:scaleX(${done?1:(i===sectionIdx?0.45:0)})"></i>`;
-    strata.appendChild(seg);
   });
   const cur = rail.querySelector('[aria-current="step"]');
-  if(cur) cur.scrollIntoView({inline:"center", block:"nearest",
+  if(scroll && cur) cur.scrollIntoView({inline:"center", block:"nearest",
     behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth"});
+  if(keepScroll!==null) rail.scrollLeft = keepScroll;
   const doneCount = secs.filter(s=>sectionState(report(),s.id)).length;
-  $("stratalabel").textContent = `Core log: ${doneCount} of ${secs.length} sections complete`;
+  $("stratalabel").textContent = doneCount===secs.length
+    ? `All ${secs.length} sections complete`
+    : `${doneCount} of ${secs.length} sections complete`;
+  if(typeof setHeadH==="function") setHeadH();
   $("stepmid").textContent = `${sectionIdx+1} / ${secs.length} — ${secs[sectionIdx].label}`;
   $("prevbtn").disabled = sectionIdx===0;
   $("nextbtn").textContent = sectionIdx===secs.length-1 ? "Preview report →" : "Next →";
   $("previewbtn").hidden = sectionIdx===secs.length-1;
-  $("ctx").textContent = `${report().d.street||"New report"} · Job ${report().d.jobNo||"—"}`;
+  $("ctx").textContent = `← ${report().d.street||"New report"} · Job ${report().d.jobNo||"—"}`;
 }
 
 /* field helpers */
 function F(key,label,opts={}){
   const d=report().d, t=opts.type||"text";
-  const req = opts.req?` <span class="opt">(required)</span>`:(opts.opt?` <span class="opt">(optional)</span>`:"");
+  /* One marker only: required. Everything unmarked is optional, so the form
+     stops carrying two kinds of parenthetical noise on every field. */
+  const req = opts.req?` <span class="reqmark">Required to issue</span>`:"";
   const ac = opts.ac?` autocomplete="${opts.ac}"`:"";
   const im = opts.im?` inputmode="${opts.im}"`:"";
-  if(t==="textarea") return `<div class="${opts.wide?"wide":""}"><label for="f_${key}">${label}${req}</label>
-    <textarea id="f_${key}" data-k="${key}"${ac}>${esc(d[key])}</textarea>${opts.hint?`<p class="hint">${opts.hint}</p>`:""}</div>`;
-  if(t==="select") return `<div class="${opts.wide?"wide":""}"><label for="f_${key}">${label}${req}</label>
+  /* Format examples live in the placeholder, not in a hint line below the
+     field: same guidance, one less line of standing text per field. */
+  const ph = opts.ph?` placeholder="${esc(opts.ph)}"`:"";
+  const cls = `${opts.wide?"wide":""}${opts.narrow?" narrow":""}`;
+  if(t==="textarea") return `<div class="${cls}"><label for="f_${key}">${label}${req}</label>
+    <textarea id="f_${key}" data-k="${key}"${ac}${ph}>${esc(d[key])}</textarea>${opts.hint?`<p class="hint">${opts.hint}</p>`:""}</div>`;
+  if(t==="select") return `<div class="${cls}"><label for="f_${key}">${label}${req}</label>
     <select id="f_${key}" data-k="${key}">${opts.options.map(o=>`<option value="${esc(o)}"${d[key]===o?" selected":""}>${esc(o||"— select —")}</option>`).join("")}</select>${opts.hint?`<p class="hint">${opts.hint}</p>`:""}</div>`;
-  return `<div class="${opts.wide?"wide":""}"><label for="f_${key}">${label}${req}</label>
-    <input id="f_${key}" data-k="${key}" type="${t}" value="${esc(d[key])}"${ac}${im}>${opts.hint?`<p class="hint">${opts.hint}</p>`:""}</div>`;
+  return `<div class="${cls}"><label for="f_${key}">${label}${req}</label>
+    <input id="f_${key}" data-k="${key}" type="${t}" value="${esc(d[key])}"${ac}${im}${ph}>${opts.hint?`<p class="hint">${opts.hint}</p>`:""}</div>`;
 }
 
 /* ---------- section templates ---------- */
@@ -581,68 +663,68 @@ setup(r){ return `
  <div class="grid">
   <div><label for="f_type">Report type</label>
    <select id="f_type">${Object.entries(TYPES).map(([k,v])=>`<option value="${k}"${r.type===k?" selected":""}>${v.label}</option>`).join("")}</select>
-   <p class="hint">Changing type keeps your data; sections that no longer apply are hidden, not deleted.</p></div>
-  ${F("jobNo","Job number",{req:1,hint:"e.g. AD-2026-014"})}
-  ${F("revision","Revision")}
-  ${F("dateIssued","Date of issue",{type:"date"})}
+   <p class="hint">Hidden sections keep their data.</p></div>
+  ${F("jobNo","Job number",{req:1,ph:"AD-2026-014"})}
+  ${F("revision","Revision",{narrow:1})}
+  ${F("dateIssued","Date of issue",{type:"date",narrow:1})}
  </div>
 </fieldset>
 <fieldset><legend>Responsibility</legend>
  <div class="grid">
   ${F("author","Author — engineer",{req:1,ac:"name"})}
-  ${F("authorQual","Author qualifications",{hint:"e.g. BEng (Civil) MIEAust CPEng"})}
-  ${F("reviewer","Reviewer",{req:1,hint:"A second set of eyes is required before issue."})}
-  ${F("reviewerQual","Reviewer qualifications")}
-  ${F("authorReg","Author registration no.",{opt:1,hint:"NSW DBP PE number and/or NER/CPEng — mandatory for class 2/3/9c work, best practice always."})}
-  ${F("reviewerReg","Reviewer registration no.",{opt:1})}
+  ${F("authorQual","Author qualifications",{ph:"BEng (Civil) MIEAust CPEng"})}
+  ${F("reviewer","Reviewer",{req:1})}
+  ${F("reviewerQual","Reviewer qualifications",{ph:"BEng (Civil) MIEAust CPEng"})}
+  ${F("authorReg","Author registration no.",{ph:"NSW DBP PE / NER / CPEng"})}
+  ${F("reviewerReg","Reviewer registration no.",{ph:"NSW DBP PE / NER / CPEng"})}
  </div>
 </fieldset>`; },
 
 client(r){ return `
 <fieldset><legend>Client</legend>
  <div class="grid">
-  ${F("client","Client name",{req:1,ac:"organization"})}
-  ${F("careOf","Care of / referring designer",{opt:1})}
-  ${F("clientPhone","Client phone",{opt:1,ac:"tel",im:"tel"})}
-  ${F("clientEmail","Client email",{opt:1,type:"email",ac:"email"})}
+  ${F("client","Client name",{req:1})}
+  ${F("careOf","Care of / referring designer")}
+  ${F("clientPhone","Client phone",{im:"tel"})}
+  ${F("clientEmail","Client email",{type:"email"})}
  </div>
 </fieldset>
 <fieldset><legend>Site identification</legend>
  <div class="grid">
-  ${F("street","Street address",{req:1,ac:"street-address",wide:1})}
+  ${F("street","Street address",{req:1,wide:1})}
   ${F("suburb","Suburb",{req:1})}
-  ${F("state","State",{type:"select",options:["NSW","QLD","VIC","SA","WA","TAS","NT","ACT"]})}
-  ${F("postcode","Postcode",{req:1,im:"numeric",ac:"postal-code"})}
-  ${F("lotDp","Lot & DP",{req:1,hint:"Certifiers reject reports that aren't lot-specific. e.g. Lot 12 DP 1234567"})}
-  ${F("council","Council / LGA",{opt:1})}
+  ${F("state","State",{type:"select",narrow:1,options:["NSW","QLD","VIC","SA","WA","TAS","NT","ACT"]})}
+  ${F("postcode","Postcode",{req:1,im:"numeric",narrow:1,ph:"2323"})}
+  ${F("lotDp","Lot & DP",{req:1,ph:"Lot 12 DP 1234567"})}
+  ${F("council","Council / LGA")}
  </div>
 </fieldset>
 <fieldset><legend>Proposed development</legend>
  <div class="grid">
-  ${F("projectDesc","Description of proposed works",{type:"textarea",req:1,wide:1,hint:"e.g. New single-storey dwelling and detached garage."})}
-  ${F("drawingsBy","Drawings prepared by",{opt:1})}
-  ${F("drawingNos","Drawing numbers",{opt:1})}
-  ${F("drawingsDate","Drawings dated",{opt:1,type:"date"})}
+  ${F("projectDesc","Description of proposed works",{type:"textarea",req:1,wide:1,ph:"New single-storey dwelling and detached garage"})}
+  ${F("drawingsBy","Drawings prepared by")}
+  ${F("drawingNos","Drawing numbers",{ph:"A01–A08"})}
+  ${F("drawingsDate","Drawings dated",{type:"date",narrow:1})}
  </div>
 </fieldset>`; },
 
 site(r){ return `
 <fieldset><legend>Site description</legend>
  <div class="grid">
-  ${F("access","Access",{type:"textarea",wide:1,hint:"How the site is accessed; constraints for rigs or excavators."})}
+  ${F("access","Access",{type:"textarea",wide:1,ph:"Access route; constraints for rigs or excavators"})}
   ${F("existing","Existing development / structures",{type:"textarea",wide:1})}
-  ${F("vegetation","Vegetation",{type:"textarea",wide:1,hint:"Note large trees — they affect AS 2870 classification and footing setbacks."})}
-  ${F("slopeDeg","Average slope (degrees)",{req:1,im:"decimal"})}
-  ${F("aspect","Slope aspect / falls to",{opt:1})}
+  ${F("vegetation","Vegetation",{type:"textarea",wide:1,ph:"Cover, large trees, stumps, recent removal"})}
+  ${F("slopeDeg","Average slope (degrees)",{req:1,im:"decimal",narrow:1,ph:"3"})}
+  ${F("aspect","Slope aspect / falls to")}
   ${F("drainage","Surface drainage & seepage observed",{type:"textarea",wide:1})}
-  ${F("neighbours","Neighbouring environment",{type:"textarea",wide:1,opt:1})}
+  ${F("neighbours","Neighbouring environment",{type:"textarea",wide:1})}
  </div>
 </fieldset>
 <fieldset><legend>Geology & site history</legend>
  <div class="grid">
-  ${F("geologyMap","Geological map reference",{hint:"e.g. 1:100,000 Newcastle sheet / GSNSW Seamless Geology via MinView"})}
-  ${F("geologyUnit","Mapped unit & typical materials",{req:1,wide:1,hint:"e.g. Mulbring Siltstone — siltstone, claystone, thin sandstone."})}
-  ${F("history","Site history & fill risk",{type:"textarea",wide:1,hint:"Previous use, filling, dams, demolition — this drives the borehole plan. Scope before you drill."})}
+  ${F("geologyMap","Geological map reference",{ph:"1:100,000 Newcastle sheet"})}
+  ${F("geologyUnit","Mapped unit & typical materials",{req:1,wide:1,ph:"Mulbring Siltstone — siltstone, claystone, thin sandstone"})}
+  ${F("history","Site history & fill risk",{type:"textarea",wide:1,ph:"Previous use, filling, dams, demolition"})}
  </div>
 </fieldset>
 <fieldset><legend>Site location image</legend>
@@ -650,7 +732,7 @@ site(r){ return `
   <button type="button" id="sitefigbtn">🗺 Add locality / aerial image</button>
   <input type="file" id="sitefigfile" accept="image/*" hidden aria-hidden="true">
  </div>
- <p class="hint">An aerial or locality map appears on the cover and in the site description.</p>
+ <p class="hint">Appears on the cover and in section 2.</p>
  <div id="sitefigwrap" style="margin-top:.7rem"></div>
 </fieldset>
 <fieldset><legend>Site plans (Appendix A)</legend>
@@ -658,54 +740,49 @@ site(r){ return `
   <button type="button" id="addplan">＋ Add site plan image</button>
   <input type="file" id="planfile" accept="image/*,application/pdf" multiple hidden aria-hidden="true">
  </div>
- <p class="hint">Site plan, ground test locations, sections — PDF or image; each page lands in Appendix A.</p>
+ <p class="hint">PDF or image — each page becomes a page of Appendix A.</p>
  <div class="photogrid" id="plangrid" style="margin-top:.7rem"></div>
 </fieldset>`; },
 
 field(r){ return `
 <fieldset><legend>Fieldwork visit</legend>
  <div class="grid">
-  ${F("fieldDate","Fieldwork date",{type:"date",req:1,hint:"Used everywhere the visit is referenced."})}
+  ${F("fieldDate","Fieldwork date",{type:"date",req:1,narrow:1})}
   ${F("operator","Operator / logged by",{ac:"name"})}
-  ${F("weather","Weather",{opt:1})}
-  ${F("equipment","Equipment & methods summary",{wide:1,hint:"e.g. Vehicle-mounted push tube; 9 kg DCP to AS 1289.6.3.2."})}
+  ${F("weather","Weather")}
+  ${F("equipment","Equipment & methods summary",{wide:1,ph:"Vehicle-mounted push tube; 9 kg DCP to AS 1289.6.3.2"})}
   ${F("groundwater","Groundwater",{type:"select",options:["Not encountered","Encountered — see borehole logs","Seepage observed"]})}
  </div>
 </fieldset>
 <fieldset><legend>Boreholes / test pits</legend>
- <p class="hint" style="margin-top:0">AS 1726 layer order: name; colour; moisture; consistency/density; structure; origin. Lead with FILL or TOPSOIL in capitals if present.</p>
+ <p class="hint" style="margin-top:0">AS 1726 layer order: name; colour; moisture; consistency/density; structure; origin.</p>
  <div id="bhlist" class="rowlist"></div>
  <button type="button" id="addbh">+ Add borehole</button>
 </fieldset>
-<fieldset><legend>DCP tests <span class="opt" style="font-weight:400">(optional)</span></legend>
- <p class="hint" style="margin-top:0">Summarise refusal depths here for the body table. Upload the full DCP report under
-  Results — it sits in Appendix C, so there's no need to re-key every blow count.</p>
+<fieldset><legend>DCP tests</legend>
+ <p class="hint" style="margin-top:0">Summary only — upload the full DCP report under Results.</p>
  <div id="dcplist" class="rowlist"></div>
  <button type="button" id="adddcp">+ Add DCP test</button>
 </fieldset>`; },
 
 lab(r){ return `
 <fieldset><legend>Result documents (Appendix C)</legend>
- <p class="hint" style="margin-top:0">Upload the reports as they arrive — the lab's liquid limit / linear shrinkage sheet,
-  the subcontractor's DCP report, and similar. The originals sit in Appendix C; you then transcribe only the summary
-  values below for the body of the report.</p>
+ <p class="hint" style="margin-top:0">Lab and subcontractor reports — originals go to Appendix C.</p>
  <div class="inline">
   <button type="button" id="addatt">📎 Upload result document</button>
   <input type="file" id="attfile" accept="image/*,application/pdf" multiple hidden aria-hidden="true">
  </div>
- <p class="hint">PDFs and images both embed directly as pages in Appendix C. First PDF conversion needs an internet
-  connection once; after that it works offline.</p>
- <div id="attlist" class="rowlist"></div>
+  <div id="attlist" class="rowlist"></div>
  <div class="checks" style="margin-top:.6rem">
   <label><input type="checkbox" data-bool="awaitingResults"${r.d.awaitingResults?" checked":""}>
-   <span><b>Results still pending</b> — keep this report as a draft until external results are in. Blocks issue while ticked.</span></label>
+   <span><b>Results still pending</b> — blocks issue while ticked.</span></label>
  </div>
 </fieldset>
 <fieldset><legend>Summary of laboratory results</legend>
- <p class="hint" style="margin-top:0">Transcribe only the values referenced in the report body — the source document above is the record.</p>
+ <p class="hint" style="margin-top:0">Enter only the values quoted in the report body.</p>
  <div class="grid">
-  ${F("labName","Laboratory",{hint:"NATA-accredited laboratory name"})}
-  ${F("labDate","Lab test date",{type:"date"})}
+  ${F("labName","Laboratory",{ph:"NATA-accredited laboratory"})}
+  ${F("labDate","Lab test date",{type:"date",narrow:1})}
  </div>
  <div id="samplelist" class="rowlist"></div>
  <button type="button" id="addsample">+ Add sample result</button>
@@ -715,47 +792,46 @@ cls(r){ return `
 <fieldset><legend>AS 2870 site classification</legend>
  <div class="grid">
   ${F("siteClass","Site classification",{type:"select",req:1,options:["",...AS2870]})}
-  ${F("ys","Characteristic surface movement ys (mm)",{opt:1,im:"decimal"})}
-  ${F("classJust","Basis of classification",{type:"textarea",req:1,wide:1,hint:"Subsurface profile, lab results, visual assessment, trees, fill. The engineer classifies — the app never does."})}
-  ${F("bearing","Allowable bearing pressures",{type:"textarea",wide:1,hint:"e.g. 100 kPa at 1.1 m (BH1) / 150 kPa at 1.4 m … or 800 kPa on low-strength bedrock."})}
+  ${F("ys","Characteristic surface movement ys (mm)",{im:"decimal",narrow:1,ph:"35"})}
+  ${F("classJust","Basis of classification",{type:"textarea",req:1,wide:1,ph:"Subsurface profile, lab results, visual assessment, trees, fill"})}
+  ${F("bearing","Allowable bearing pressures",{type:"textarea",wide:1,ph:"100 kPa at 1.1 m (BH1); 150 kPa at 1.4 m (BH2)"})}
  </div>
 </fieldset>`; },
 
 wind(r){ return `
 <fieldset><legend>AS 4055 wind classification</legend>
  <div class="grid">
-  ${F("windRegion","Wind region",{type:"select",options:["A","B","C","D"]})}
-  ${F("terrain","Terrain category",{hint:"e.g. TC2.5"})}
-  ${F("topo","Topographic class",{hint:"e.g. T2"})}
-  ${F("shielding","Shielding",{hint:"FS / PS / NS"})}
+  ${F("windRegion","Wind region",{type:"select",narrow:1,options:["A","B","C","D"]})}
+  ${F("terrain","Terrain category",{narrow:1,ph:"TC2.5"})}
+  ${F("topo","Topographic class",{narrow:1,ph:"T2"})}
+  ${F("shielding","Shielding",{narrow:1,ph:"FS / PS / NS"})}
   ${F("windClass","Resulting wind classification",{type:"select",req:1,options:["",...WINDCLASSES]})}
  </div>
  <div class="checks" style="margin-top:.6rem">
   <label><input type="checkbox" id="f_windNote" ${r.d.windNote?"checked":""}>
-   Include note: a detailed AS 1170.2 assessment may yield a lower design wind speed, reducing framing and tie-down costs — Abbot Design can provide this.</label>
+   Include the AS 1170.2 refinement note in the report.</label>
  </div>
 </fieldset>`; },
 
 recs(r){ return `
 ${r.type!=="desktop"?`<fieldset><legend>Foundations</legend>
- <p class="hint" style="margin-top:0">Suitable footing systems for this site:</p>
  <div class="checks">${FOOTINGS.map(f=>`<label><input type="checkbox" data-arr="footings" value="${esc(f)}"${r.d.footings.includes(f)?" checked":""}> ${esc(f)}</label>`).join("")}</div>
  <div class="grid" style="margin-top:.8rem">
-  ${F("founding","Founding advice & minimum requirements",{type:"textarea",wide:1,req:1,hint:"Founding stratum, pier requirements, differential settlement controls."})}
+  ${F("founding","Founding advice & minimum requirements",{type:"textarea",wide:1,req:1,ph:"Founding stratum, pier requirements, differential settlement controls"})}
  </div>
 </fieldset>`:""}
 <fieldset><legend>Geotechnical recommendations</legend>
- <p class="hint" style="margin-top:0">${r.type==="desktop"?`No fieldwork has been done on a desktop assessment, so avoid specific footing advice here — use these rows for desk-study findings and next steps, e.g. recommending a full on-site investigation before a Construction Certificate can be sought. `:""}One row per topic. Description supports simple formatting:
-  start a line with <b># </b> for a heading, <b>- </b> for a bullet, or <b>|cell|cell|</b> for a table row.</p>
+ ${r.type==="desktop"?`<p class="hint" style="margin-top:0">Use these rows for desk-study findings and next steps — not footing advice.</p>`:""}
+ <details style="margin:0 0 .6rem"><summary class="hint" style="cursor:pointer;min-height:var(--tap);display:flex;align-items:center">Formatting in descriptions</summary>
+  <div class="hint" style="margin:.3rem 0 0">Start a line with <b># </b> for a heading, <b>- </b> for a bullet, or <b>|cell|cell|</b> for a table row.</div></details>
  <div id="reclist" class="rowlist"></div>
  <button type="button" id="addrec">+ Add recommendation</button>
 </fieldset>
 ${r.type==="comprehensive"?`<fieldset><legend>Hazards & risk</legend>
- <div class="grid">${F("hazards","Geotechnical hazards & risk analysis",{type:"textarea",wide:1,req:1,hint:"Identified hazards, likelihood/consequence commentary (AGS 2007 where landslide risk applies)."})}</div>
+ <div class="grid">${F("hazards","Geotechnical hazards & risk analysis",{type:"textarea",wide:1,req:1,ph:"Hazards, likelihood and consequence (AGS 2007 where landslide risk applies)"})}</div>
 </fieldset>`:""}
 <fieldset><legend>Inspections & hold points</legend>
- <p class="hint" style="margin-top:0">Inspections required for this report to remain valid through construction:</p>
- <div class="checks">${HOLDPOINTS.map(h=>`<label><input type="checkbox" data-arr="holds" value="${esc(h)}"${r.d.holds.includes(h)?" checked":""}> ${esc(h)}</label>`).join("")}</div>
+  <div class="checks">${HOLDPOINTS.map(h=>`<label><input type="checkbox" data-arr="holds" value="${esc(h)}"${r.d.holds.includes(h)?" checked":""}> ${esc(h)}</label>`).join("")}</div>
 </fieldset>`; },
 
 photos(r){ return `
@@ -765,7 +841,7 @@ photos(r){ return `
    <input type="file" id="photofile" accept="image/*" capture="environment" multiple hidden aria-hidden="true">
    <span class="hint" id="photocount"></span>
  </div>
- <p class="hint">Photos are compressed on-device for the report. Keep originals in your camera roll.</p>
+ <p class="hint">Keep originals in your camera roll.</p>
  <div class="photogrid" id="photogrid" style="margin-top:.8rem"></div>
 </fieldset>`; },
 
@@ -807,8 +883,7 @@ review(r){ return `
  <div class="grid" style="margin-top:.7rem">${F("appGeneral","General notes text",{type:"textarea",wide:1})}</div>
 </fieldset>
 <fieldset><legend>Document distribution</legend>
- <p class="hint" style="margin-top:0">Who receives this report, in what format, and when.</p>
- <div id="distlist" class="rowlist"></div>
+  <div id="distlist" class="rowlist"></div>
  <button type="button" id="adddist">+ Add recipient</button>
 </fieldset>
 <fieldset><legend>Readiness</legend>
@@ -816,8 +891,7 @@ review(r){ return `
  <div class="inline" style="margin-top:.8rem">
   <button type="button" id="exportthis">Export data (.json)</button>
  </div>
- <p class="hint">Use <b>Preview report →</b> below to review and issue.</p>
-</fieldset>`; }
+ </fieldset>`; }
 };
 
 /* ---------- dynamic row renderers ---------- */
@@ -832,7 +906,7 @@ function renderBoreholes(){
        </select></label></div>
        <div><label>Termination depth (m)<input data-bh="${i}" data-f="depth" inputmode="decimal" value="${esc(b.depth)}"></label></div>
        <div><label>Water<select data-bh="${i}" data-f="water">${["NE — not encountered","E — encountered","Seepage"].map(m=>`<option${b.water===m?" selected":""}>${m}</option>`).join("")}</select></label></div>
-       <div><label>Water depth (m) <span class="opt">(optional)</span><input data-bh="${i}" data-f="waterDepth" inputmode="decimal" value="${esc(b.waterDepth||"")}" placeholder="e.g. 2.4"></label></div>
+       <div><label>Water depth (m)<input data-bh="${i}" data-f="waterDepth" inputmode="decimal" value="${esc(b.waterDepth||"")}" placeholder="2.4"></label></div>
      </div>
      <div class="rowlist" data-layers="${i}"></div>
      <button type="button" data-addlayer="${i}">+ Add soil layer</button>`;
@@ -948,16 +1022,38 @@ function renderReviewGaps(){
     ? `<p style="color:var(--ok);font-weight:600;margin:0">✓ All required content is present. Preview, then issue.</p>`
     : `<div class="gaps"><b>${gaps.length} item(s) needed before this report can be issued:</b>
        <ul>${gaps.map(g=>`<li><a href="#" data-goto="${g.sec}">${esc(g.label)}</a></li>`).join("")}</ul>
-       <p class="hint">You can still generate a PDF at any time — it carries a DRAFT watermark until issued.</p></div>`;
+       <p class="hint">A PDF generated now carries a DRAFT watermark.</p></div>`;
 }
 
-function renderEditor(){
+/* opts.focus === false for re-renders that are NOT navigation (adding a photo,
+   switching report type, submitting for review). Those used to fling focus back
+   to the top of the form and lose the engineer's place. */
+/* Marks required-but-empty fields the engineer has already visited. Runs on
+   blur and after each render, so nothing is flagged before it has been reached. */
+function markNeeded(){
+  document.querySelectorAll("#form [data-k]").forEach(el=>{
+    const wrap = el.closest("div");
+    const isReq = wrap && wrap.querySelector(".reqmark");
+    if(isReq && el.hasAttribute("data-touched") && !String(el.value||"").trim()) el.setAttribute("data-need","");
+    else el.removeAttribute("data-need");
+  });
+}
+document.addEventListener("blur", e=>{
+  if(e.target && e.target.dataset && e.target.dataset.k!==undefined){
+    e.target.setAttribute("data-touched","");
+    markNeeded();
+  }
+}, true);
+
+function renderEditor(opts){
+  const focusFirst = !opts || opts.focus !== false;
   renderTabs();
   const sec = visibleSections()[sectionIdx];
   $("form").innerHTML = TPL[sec.id](report());
   renderBoreholes(); renderDcps(); renderSamples(); renderPhotos(); renderPlans(); renderDist(); renderRecRows(); renderSiteFig(); renderAttachments(); initSigPads(); renderReviewGaps();
   const first = $("form").querySelector("input,select,textarea,button");
-  if(first && matchMedia("(min-width:700px)").matches) first.focus({preventScroll:true});
+  if(focusFirst && first && matchMedia("(min-width:700px)").matches) first.focus({preventScroll:true});
+  markNeeded();
 }
 
 /* ============================================================
@@ -1146,7 +1242,7 @@ function buildReport(){
   if(r.type!=="desktop" && (BORELOG_HTML||ATTACH_HTML)) apps.push({letter:"C", t:"Bore logs | DCP test results", html:BORELOG_HTML+ATTACH_HTML});
   {
     let info="";
-    if(r.type!=="desktop" && d.incLegend) info += `<h3>Borehole log legend</h3>`+LEGEND_HTML.replace('<h3>Investigation methods</h3>','<h3>Investigation methods</h3>');
+    if(r.type!=="desktop" && d.incLegend) info += `<h3>Borehole log legend</h3>`+LEGEND_HTML;
     if(r.type!=="desktop" && d.incClassDefs) info += `<h3>AS 2870 site classification definitions</h3>`+CLASSDEFS_HTML;
     if(d.incGeneral && d.appGeneral) info += `<h3>General notes</h3><p>${nl(d.appGeneral)}</p>`;
     info += FURTHER_HTML;
@@ -1283,7 +1379,7 @@ function imgError(file){
 }
 function addPhotos(files){
   [...files].forEach(f=>compressImage(f).then(dataUrl=>{
-    report().photos.push({caption:"",dataUrl}); saveDb(); renderEditor(); note("Photo added.");
+    report().photos.push({caption:"",dataUrl}); saveDb(); renderEditor({focus:false}); note("Photo added.");
     if(report().photos.length>=12) note("Large photo sets can exceed device storage — export regularly.");
   }).catch(()=>imgError(f)));
 }
@@ -1354,27 +1450,38 @@ document.addEventListener("click",e=>{
       .then(ok=>{ if(ok){ rp.issued=new Date().toISOString(); rp.status="issued"; saveDb(); buildReport(); note("Report issued. Print or save the PDF now."); }});
   }
   if(t.id==="addbh"){ report().boreholes.push({method:"",depth:"",water:"NE — not encountered",waterDepth:"",layers:[]}); saveDb(); renderBoreholes(); renderTabs(); }
-  if(t.dataset.delbh!==undefined){ report().boreholes.splice(+t.dataset.delbh,1); saveDb(); renderBoreholes(); renderTabs(); }
+  if(t.dataset.delbh!==undefined){ const i=+t.dataset.delbh, gone=report().boreholes.splice(i,1)[0];
+    saveDb(); renderBoreholes(); renderTabs();
+    noteUndo(`BH${i+1} removed.`, ()=>report().boreholes.splice(i,0,gone)); }
   if(t.dataset.addlayer!==undefined){ report().boreholes[+t.dataset.addlayer].layers.push({from:"",to:"",uscs:"",desc:""}); saveDb(); renderBoreholes(); }
-  if(t.dataset.dellayer){ const [i,j]=t.dataset.dellayer.split(":").map(Number); report().boreholes[i].layers.splice(j,1); saveDb(); renderBoreholes(); }
+  if(t.dataset.dellayer){ const [i,j]=t.dataset.dellayer.split(":").map(Number);
+    const gone=report().boreholes[i].layers.splice(j,1)[0]; saveDb(); renderBoreholes();
+    noteUndo(`Layer ${j+1} of BH${i+1} removed.`, ()=>report().boreholes[i].layers.splice(j,0,gone)); }
   if(t.id==="adddcp"){ report().dcps.push({depth:"",note:""}); saveDb(); renderDcps(); }
-  if(t.dataset.deldcp!==undefined){ report().dcps.splice(+t.dataset.deldcp,1); saveDb(); renderDcps(); }
+  if(t.dataset.deldcp!==undefined){ const i=+t.dataset.deldcp, gone=report().dcps.splice(i,1)[0];
+    saveDb(); renderDcps(); noteUndo(`DCP ${i+1} removed.`, ()=>report().dcps.splice(i,0,gone)); }
   if(t.id==="addsample"){ report().samples.push({bh:"",depth:"",ll:"",ls:"",desc:""}); saveDb(); renderSamples(); }
-  if(t.dataset.delsample!==undefined){ report().samples.splice(+t.dataset.delsample,1); saveDb(); renderSamples(); }
+  if(t.dataset.delsample!==undefined){ const i=+t.dataset.delsample, gone=report().samples.splice(i,1)[0];
+    saveDb(); renderSamples(); noteUndo(`Sample ${i+1} removed.`, ()=>report().samples.splice(i,0,gone)); }
   if(t.id==="takephoto") $("photofile").click();
   if(t.id==="addplan") $("planfile").click();
   if(t.id==="addatt") $("attfile").click();
-  if(t.dataset.delatt!==undefined){ report().attachments.splice(+t.dataset.delatt,1); saveDb(); renderAttachments(); }
+  if(t.dataset.delatt!==undefined){ const i=+t.dataset.delatt, gone=report().attachments.splice(i,1)[0];
+    saveDb(); renderAttachments(); renderTabs();
+    noteUndo("Result document removed.", ()=>report().attachments.splice(i,0,gone)); }
   if(t.dataset.dlatt!==undefined){ const a=report().attachments[+t.dataset.dlatt];
     const link=document.createElement("a"); link.href=a.dataUrl;
     link.download=(a.title||a.name||"attachment").replace(/[^\w.-]+/g,"_")+(a.kind==="pdf"?".pdf":".jpg"); link.click(); }
-  if(t.dataset.delplan!==undefined){ report().plans.splice(+t.dataset.delplan,1); saveDb(); renderPlans(); }
+  if(t.dataset.delplan!==undefined){ const i=+t.dataset.delplan, gone=report().plans.splice(i,1)[0];
+    saveDb(); renderPlans(); noteUndo("Site plan removed.", ()=>report().plans.splice(i,0,gone)); }
   if(t.id==="adddist"){ (report().d.dist||(report().d.dist=[])).push({to:"",format:"PDF",date:report().d.dateIssued||""}); saveDb(); renderDist(); }
-  if(t.dataset.deldist!==undefined){ report().d.dist.splice(+t.dataset.deldist,1); saveDb(); renderDist(); }
+  if(t.dataset.deldist!==undefined){ const i=+t.dataset.deldist, gone=report().d.dist.splice(i,1)[0];
+    saveDb(); renderDist(); noteUndo("Recipient removed.", ()=>report().d.dist.splice(i,0,gone)); }
   if(t.id==="addrec"){ (report().d.recRows||(report().d.recRows=[])).push({area:REC_AREAS[0],desc:""}); saveDb(); renderRecRows(); }
-  if(t.dataset.delrec!==undefined){ report().d.recRows.splice(+t.dataset.delrec,1); saveDb(); renderRecRows(); }
-  if(t.id==="ctx"){ const r=report();
-    note(r?`${r.d.street||"No address yet"}, ${r.d.suburb||""} — Job ${r.d.jobNo||"—"} (${TYPES[r.type].label})`:"No report open."); }
+  if(t.dataset.delrec!==undefined){ const i=+t.dataset.delrec, gone=report().d.recRows.splice(i,1)[0];
+    saveDb(); renderRecRows(); renderTabs();
+    noteUndo(`${gone && gone.area ? gone.area : "Recommendation"} removed.`, ()=>report().d.recRows.splice(i,0,gone)); }
+  if(t.id==="ctx"){ show("home"); renderHome(); }
   if(t.id==="sitefigbtn") $("sitefigfile").click();
   if(t.dataset.clearsig){ report().d[t.dataset.clearsig]=""; saveDb(); initSigPads(); }
   if(t.id==="submitreview"){
@@ -1382,18 +1489,27 @@ document.addEventListener("click",e=>{
     if(gaps.length){ note(`Complete ${gaps.length} required item(s) first — see the list below.`); renderReviewGaps(); }
     else if(!report().d.authorSig){ note("Sign as author before submitting."); }
     else ask(`Submit to ${report().d.reviewer||"the reviewer"} for review?\n\nThe report locks as "Awaiting review" — any edit returns it to draft.`,"Submit")
-      .then(ok=>{ if(ok){ report().status="review"; report().submitted=new Date().toISOString(); saveDb(); renderEditor(); note("Submitted for review."); }});
+      .then(ok=>{ if(ok){ report().status="review"; report().submitted=new Date().toISOString(); saveDb(); renderEditor({focus:false}); note("Submitted for review."); }});
   }
   if(t.id==="reqchanges"){
     ask("Return this report to the author as a draft?","Request changes").then(ok=>{
-      if(ok){ report().status="draft"; saveDb(); renderEditor(); note("Returned to draft."); }});
+      if(ok){ report().status="draft"; saveDb(); renderEditor({focus:false}); note("Returned to draft."); }});
   }
   if(t.id==="delsitefig"){ report().siteFigure=null; report().siteFigureCap=""; saveDb(); renderSiteFig(); }
-  if(t.dataset.delphoto!==undefined){ report().photos.splice(+t.dataset.delphoto,1); saveDb(); renderPhotos(); }
+  if(t.dataset.delphoto!==undefined){ const i=+t.dataset.delphoto, gone=report().photos.splice(i,1)[0];
+    saveDb(); renderPhotos(); renderTabs();
+    noteUndo(`Photo ${i+1} removed.`, ()=>report().photos.splice(i,0,gone)); }
   if(t.dataset.goto){ e.preventDefault(); sectionIdx=visibleSections().findIndex(s=>s.id===t.dataset.goto); show("editor"); renderEditor(); }
 });
 
-document.addEventListener("input",e=>{
+/* Section state used to refresh only on navigation, so the tabs and the count
+   line stayed stale while the engineer typed — the indicator looked frozen.
+   Debounced so a long free-text answer doesn't rebuild the rail per keystroke. */
+let tabsT;
+function refreshTabsSoon(){ clearTimeout(tabsT);
+  tabsT = setTimeout(()=>{ if(report() && !$("view-editor").hidden) renderTabs({scroll:false}); }, 250); }
+
+function onFieldEdit(e){
   const el=e.target; const r=report(); if(!r) return;
   if(r.issued){ r.issued=null; r.status="draft"; r.d.revision=String((parseInt(r.d.revision)||1)+1);
     note(`Edited after issue — reopened as draft, revision ${r.d.revision}.`); renderTabs(); }
@@ -1401,8 +1517,8 @@ document.addEventListener("input",e=>{
     note("Returned to draft — resubmit for review after edits."); renderTabs(); }
   el.setAttribute("data-touched","");
   if(el.dataset.k!==undefined){ r.d[el.dataset.k]= el.value; saveDb();
-    if(["jobNo","street"].includes(el.dataset.k)) $("ctx").textContent=`${r.d.street||"New report"} · Job ${r.d.jobNo||"—"}`; }
-  if(el.id==="f_type"){ r.type=el.value; sectionIdx=Math.min(sectionIdx, visibleSections().length-1); saveDb(); renderEditor(); return; }
+    if(["jobNo","street"].includes(el.dataset.k)) $("ctx").textContent=`← ${r.d.street||"New report"} · Job ${r.d.jobNo||"—"}`; }
+  if(el.id==="f_type"){ r.type=el.value; sectionIdx=Math.min(sectionIdx, visibleSections().length-1); saveDb(); renderEditor({focus:false}); return; }
   if(el.id==="f_windNote"){ r.d.windNote=el.checked; saveDb(); }
   if(el.dataset.bool){ r.d[el.dataset.bool]=el.checked; saveDb(); }
   if(el.dataset.arr){ const arr=r.d[el.dataset.arr];
@@ -1421,24 +1537,32 @@ document.addEventListener("input",e=>{
   if(el.dataset.rec!==undefined){ r.d.recRows[+el.dataset.rec][el.dataset.f]=el.value; saveDb();
     if(el.dataset.f==="area"){ const head=el.closest(".rowitem").querySelector(".rowhead b"); if(head) head.textContent=el.value; } }
   if(el.id==="sitefigcap"){ r.siteFigureCap=el.value; saveDb(); }
-});
+  refreshTabsSoon();
+}
+/* Bound to BOTH events on purpose. Autofill, and <select>/<input type=date> on
+   some platforms, fire "change" without "input"; binding only "input" silently
+   dropped those edits. Re-running on both is idempotent — it assigns the same
+   value twice. Do not "tidy" this back to a single listener. */
+document.addEventListener("input", onFieldEdit);
+document.addEventListener("change", onFieldEdit);
 document.addEventListener("change",e=>{
   if(e.target.id==="photofile"){ addPhotos(e.target.files); e.target.value=""; }
   if(e.target.id==="attfile"){
     [...e.target.files].forEach(f=>{
       if(f.type==="application/pdf"){
-        note("Converting PDF pages…");
+        note(navigator.onLine ? "Converting PDF pages…"
+          : "Converting PDF pages — this needs the internet the first time.");
         pdfToImages(f).then(pages=>{
           const base=f.name.replace(/\.pdf$/i,"");
           pages.forEach((d,i)=>(report().attachments||(report().attachments=[])).push(
             {kind:"image", name:f.name, title: pages.length>1?`${base} — page ${i+1} of ${pages.length}`:base,
              source:"", date:"", dataUrl:d}));
-          saveDb(); renderEditor(); note(`Added ${pages.length} page(s) from ${f.name}.`);
+          saveDb(); renderEditor({focus:false}); note(`Added ${pages.length} page(s) from ${f.name}.`);
         }).catch(()=>{
           const rd=new FileReader();
           rd.onload=()=>{ (report().attachments||(report().attachments=[])).push(
             {kind:"pdf", name:f.name, title:f.name.replace(/\.pdf$/i,""), source:"", date:"", dataUrl:rd.result});
-            saveDb(); renderEditor();
+            saveDb(); renderEditor({focus:false});
             note("Couldn't convert the PDF to pages (offline?). Stored as a PDF — reconnect and re-upload to embed it as pages."); };
           rd.onerror=()=>note("That PDF couldn't be read.");
           rd.readAsDataURL(f);
@@ -1446,24 +1570,25 @@ document.addEventListener("change",e=>{
       } else {
         compressImage(f).then(d=>{ (report().attachments||(report().attachments=[])).push(
           {kind:"image", name:f.name, title:"", source:"", date:"", dataUrl:d});
-          saveDb(); renderEditor(); note("Result document added."); }).catch(()=>imgError(f));
+          saveDb(); renderEditor({focus:false}); note("Result document added."); }).catch(()=>imgError(f));
       }
     }); e.target.value=""; }
   if(e.target.id==="planfile"){ [...e.target.files].forEach(f=>{
       if(f.type==="application/pdf"){
-        note("Converting PDF pages…");
+        note(navigator.onLine ? "Converting PDF pages…"
+          : "Converting PDF pages — this needs the internet the first time.");
         pdfToImages(f).then(pages=>{
           const base=f.name.replace(/\.pdf$/i,"");
           pages.forEach((d,i)=>(report().plans||(report().plans=[])).push(
             {caption: pages.length>1?`${base} — page ${i+1} of ${pages.length}`:base, dataUrl:d}));
-          saveDb(); renderEditor(); note(`Added ${pages.length} plan page(s).`);
+          saveDb(); renderEditor({focus:false}); note(`Added ${pages.length} plan page(s).`);
         }).catch(()=>note("Couldn't convert the PDF to pages — reconnect to the internet and try again, or upload an image."));
       } else compressImage(f).then(d=>{
-        (report().plans||(report().plans=[])).push({caption:"",dataUrl:d}); saveDb(); renderEditor(); note("Site plan added.");
+        (report().plans||(report().plans=[])).push({caption:"",dataUrl:d}); saveDb(); renderEditor({focus:false}); note("Site plan added.");
       }).catch(()=>imgError(f));
     }); e.target.value=""; }
   if(e.target.id==="sitefigfile"){ const f=e.target.files[0];
-    if(f) compressImage(f).then(d=>{ report().siteFigure=d; saveDb(); renderEditor(); note("Site image added."); })
+    if(f) compressImage(f).then(d=>{ report().siteFigure=d; saveDb(); renderEditor({focus:false}); note("Site image added."); })
       .catch(()=>imgError(f));
     e.target.value=""; }
   if(e.target.id==="importfile"){
@@ -1478,6 +1603,16 @@ document.addEventListener("change",e=>{
 /* ---------- boot ---------- */
 if(!store.persistent) note("Storage unavailable here — data lives in memory only. Export to keep your work.");
 if("serviceWorker" in navigator && location.protocol==="https:") navigator.serviceWorker.register("sw.js").catch(()=>{});
+/* The tab rail sticks below the header, so it needs the header's real height —
+   which changes when the chassis wraps to two lines on a narrow phone. */
+function setHeadH(){
+  const st=document.documentElement.style;
+  const h=document.querySelector("header.app").offsetHeight;
+  const tabs=document.querySelector("nav.tabs");
+  st.setProperty("--headh", h+"px");
+  st.setProperty("--chromeh", (h + (tabs? tabs.offsetHeight:0) + 8)+"px");
+}
+setHeadH(); addEventListener("resize",setHeadH);
 renderHome(); show("home");
 </script>
 </body>

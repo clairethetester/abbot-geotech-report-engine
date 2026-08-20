@@ -1,8 +1,8 @@
 /* Abbot Report Engine — offline-first service worker.
    App-shell cache: the whole app must work with zero signal on site.
    Bump CACHE version on every deploy to invalidate old shells. */
-const CACHE = "abbot-engine-v9";
-const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./engine-manual.pdf", "./icons/icon-192.png", "./icons/icon-512.png"];
+const CACHE = "abbot-engine-v10";
+const SHELL = ["./", "./index.html", "./manifest.webmanifest", "./engine-manual.pdf", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));

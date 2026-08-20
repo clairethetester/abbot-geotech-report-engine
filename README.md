@@ -25,9 +25,11 @@ No framework, no build step, no paid services. One HTML file, a manifest and a s
 - **Dynamic field records**: boreholes with layered soil profiles, DCP tests, lab samples (LL/LS).
 - **Photo capture** from the device camera, compressed on-device (~1400 px JPEG) into the report
   appendix with captions.
-- **Completeness engine**: required content per report type; the strata progress bar shows section
-  state; PDF is available at any time but carries a **DRAFT — NOT FOR CONSTRUCTION** watermark
-  until every requirement is met and the report is formally issued with a named reviewer.
+- **Completeness engine**: required content per report type. The section tabs are the progress
+  indicator — green when a section is complete, orange-dashed when started, plain when untouched —
+  and a section only counts as complete once something has actually been entered in it. PDF is
+  available at any time but carries a **DRAFT — NOT FOR CONSTRUCTION** watermark until every
+  requirement is met and the report is formally issued with a named reviewer.
 - **PDF via the browser print engine** (File → Print → Save as PDF) — works on iOS, Android,
   Windows, macOS and Linux with no dependencies; A4 print stylesheet included.
 - **Export / import (.json)** for device-to-device transfer and office review; also the future
@@ -79,6 +81,16 @@ for pixel-identical letterhead, page headers/footers with job number on every pa
 PDF/A output.
 **Phase 4 — intake integration:** quote/CRM prefill into `report.source`, client portal delivery
 links, and automatic hold-point booking reminders.
+
+## Housekeeping that must not regress
+
+- **Every URL in the `sw.js` SHELL array must resolve.** `cache.addAll()` rejects on a single 404,
+  which rejects the install handler, which means no offline cache at all — the one thing the app
+  exists to do. `tests/ux-round.spec.js` checks this on every run.
+- **Bump `CACHE` in `sw.js` on every deploy**, or installed apps keep serving the old shell.
+- **Field binding is registered on both `input` and `change`.** Autofill, and `<select>` /
+  `<input type=date>` on some platforms, fire `change` without `input`. Do not collapse this back
+  to a single listener.
 
 ## Known MVP limits (deliberate)
 
